@@ -3763,7 +3763,6 @@ class ProductHelper
         return match ($iconSet) {
             'uikit'   => ['', ''],
             'icomoon' => ['icon-minus fs-sm', 'icon-plus fs-sm'],
-            'none'    => ['', ''],
             default   => ['fa-solid fa-minus', 'fa-solid fa-plus'],
         };
     }

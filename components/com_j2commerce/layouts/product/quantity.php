@@ -27,9 +27,9 @@ use Joomla\CMS\Language\Text;
  * @var int         $maxQty           0 = unlimited
  * @var bool        $isCart
  * @var bool        $showButtons
- * @var string      $iconSet          'fontawesome' | 'uikit' | 'icomoon' | 'none'
- * @var string      $iconMinus        resolved class string (empty for uikit/none)
- * @var string      $iconPlus         resolved class string (empty for uikit/none)
+ * @var string      $iconSet          'fontawesome' | 'uikit' | 'icomoon' | 'custom'
+ * @var string      $iconMinus        resolved class string (empty when $iconSet === 'uikit')
+ * @var string      $iconPlus         resolved class string (empty when $iconSet === 'uikit')
  * @var string      $decrementDisabled ' disabled' or ''
  * @var string      $incrementDisabled ' disabled' or ''
  */
@@ -78,8 +78,6 @@ $inputHtml .= ' />';
     <button type="button" class="btn btn-icon btn-lg" data-decrement aria-label="<?php echo htmlspecialchars(Text::_('COM_J2COMMERCE_DECREASE_QUANTITY'), ENT_QUOTES, 'UTF-8'); ?>"<?php echo $decrementDisabled; ?>>
         <?php if ($iconSet === 'uikit') : ?>
             <span uk-icon="icon: minus" aria-hidden="true"></span>
-        <?php elseif ($iconSet === 'none') : ?>
-            <span aria-hidden="true"></span>
         <?php else : ?>
             <span class="<?php echo htmlspecialchars($iconMinus, ENT_QUOTES, 'UTF-8'); ?>" aria-hidden="true"></span>
         <?php endif; ?>
@@ -88,8 +86,6 @@ $inputHtml .= ' />';
     <button type="button" class="btn btn-icon btn-lg" data-increment aria-label="<?php echo htmlspecialchars(Text::_('COM_J2COMMERCE_INCREASE_QUANTITY'), ENT_QUOTES, 'UTF-8'); ?>"<?php echo $incrementDisabled; ?>>
         <?php if ($iconSet === 'uikit') : ?>
             <span uk-icon="icon: plus" aria-hidden="true"></span>
-        <?php elseif ($iconSet === 'none') : ?>
-            <span aria-hidden="true"></span>
         <?php else : ?>
             <span class="<?php echo htmlspecialchars($iconPlus, ENT_QUOTES, 'UTF-8'); ?>" aria-hidden="true"></span>
         <?php endif; ?>
