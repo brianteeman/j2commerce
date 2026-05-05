@@ -85,9 +85,9 @@ final class J2CommerceField extends FormField
     /** @since 6.0.0 */
     private function buildProductForm(?object $product, int $articleId): string
     {
-        $app        = Factory::getApplication();
-        $formPrefix = 'jform[attribs][j2commerce]';
-        $productId  = $product->j2commerce_product_id ?? 0;
+        $app         = Factory::getApplication();
+        $formPrefix  = 'jform[attribs][j2commerce]';
+        $productId   = $product->j2commerce_product_id ?? 0;
         $productType = $product->product_type ?? '';
 
         // Calculate variant statistics

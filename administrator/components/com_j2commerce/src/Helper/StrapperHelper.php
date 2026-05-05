@@ -193,12 +193,12 @@ class StrapperHelper
 
             // Detect view context
             return match (strtolower($view)) {
-                'product' => self::CONTEXT_PRODUCT_DETAIL,
-                'products', 'category', 'categories', 'producttags' => self::CONTEXT_PRODUCT_LIST,
-                'cart', 'carts' => self::CONTEXT_CART,
-                'checkout', 'checkouts' => self::CONTEXT_CHECKOUT,
+                'product'                                              => self::CONTEXT_PRODUCT_DETAIL,
+                'products', 'category', 'categories', 'producttags'    => self::CONTEXT_PRODUCT_LIST,
+                'cart', 'carts'                                        => self::CONTEXT_CART,
+                'checkout', 'checkouts'                                => self::CONTEXT_CHECKOUT,
                 'myprofile', 'orders', 'order', 'addresses', 'address' => self::CONTEXT_MYPROFILE,
-                default => self::CONTEXT_DEFAULT,
+                default                                                => self::CONTEXT_DEFAULT,
             };
         } catch (\Exception $e) {
             return self::CONTEXT_DEFAULT;

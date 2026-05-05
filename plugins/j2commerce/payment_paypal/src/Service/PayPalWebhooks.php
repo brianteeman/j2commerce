@@ -197,11 +197,11 @@ final class PayPalWebhooks
 
         // Build a minimal order-like object the renewal helper can consume.
         $renewalOrder = (object) [
-            'order_id'        => (string) ($subscription->order_id ?? ''),
-            'order_total'     => (float) ($subscription->renewal_amount ?? 0),
-            'currency_code'   => (string) ($resource['amount']['currency'] ?? 'USD'),
-            'transaction_id'  => (string) ($resource['id'] ?? ''),
-            'paypal_sale_id'  => (string) ($resource['id'] ?? ''),
+            'order_id'       => (string) ($subscription->order_id ?? ''),
+            'order_total'    => (float) ($subscription->renewal_amount ?? 0),
+            'currency_code'  => (string) ($resource['amount']['currency'] ?? 'USD'),
+            'transaction_id' => (string) ($resource['id'] ?? ''),
+            'paypal_sale_id' => (string) ($resource['id'] ?? ''),
         ];
 
         Factory::getApplication()->getDispatcher()->dispatch(

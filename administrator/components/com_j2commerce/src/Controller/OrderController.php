@@ -408,8 +408,8 @@ class OrderController extends FormController
             $totalPages = $result['total'] > 0 ? (int) ceil($result['total'] / $limit) : 1;
 
             $componentParams = \Joomla\CMS\Component\ComponentHelper::getParams('com_j2commerce');
-            $dateFormat = $componentParams->get('date_format', 'Y-m-d');
-            $timeFormat = $componentParams->get('time_format', 'H:i:s');
+            $dateFormat      = $componentParams->get('date_format', 'Y-m-d');
+            $timeFormat      = $componentParams->get('time_format', 'H:i:s');
 
             $items        = [];
             $historyItems = $result['items'];

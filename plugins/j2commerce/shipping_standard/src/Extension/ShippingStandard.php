@@ -1246,11 +1246,11 @@ final class ShippingStandard extends CMSPlugin implements SubscriberInterface
 
         match ($task) {
             'save', 'apply' => $this->handleSave($event, $task),
-            'delete'    => $this->handleDelete($event),
-            'publish'   => $this->handlePublish($event, 1),
-            'unpublish' => $this->handlePublish($event, 0),
-            'cancel'    => $this->handleCancel($event),
-            default     => null,
+            'delete'        => $this->handleDelete($event),
+            'publish'       => $this->handlePublish($event, 1),
+            'unpublish'     => $this->handlePublish($event, 0),
+            'cancel'        => $this->handleCancel($event),
+            default         => null,
         };
     }
 

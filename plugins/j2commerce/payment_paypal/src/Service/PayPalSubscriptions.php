@@ -84,10 +84,10 @@ final class PayPalSubscriptions
 
         $period       = strtoupper((string) ($subscription->period ?? 'MONTH'));
         $intervalUnit = match ($period) {
-            'DAY', 'D' => 'DAY',
+            'DAY', 'D'  => 'DAY',
             'WEEK', 'W' => 'WEEK',
             'YEAR', 'Y' => 'YEAR',
-            default => 'MONTH',
+            default     => 'MONTH',
         };
 
         $intervalCount = max(1, (int) ($subscription->period_units ?? 1));

@@ -229,8 +229,8 @@ final class ProductLayoutService
 
         $folder = match ($subtemplate) {
             'tag_bootstrap5', 'bootstrap5' => 'app_bootstrap5',
-            'uikit' => 'app_uikit',
-            default => 'app_' . $subtemplate,
+            'uikit'                        => 'app_uikit',
+            default                        => 'app_' . $subtemplate,
         };
 
         return $folder;
