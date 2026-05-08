@@ -224,7 +224,12 @@ class OrdersModel extends ListModel
             $orderDir = 'DESC';
         }
 
-        $query->order($db->escape($orderCol) . ' ' . $db->escape($orderDir));
+        if ($orderCol === 'invoice') {
+            $query->order($db->quoteName('a.invoice_prefix') . ' ' . $db->escape($orderDir))
+                ->order($db->quoteName('a.j2commerce_order_id') . ' ' . $db->escape($orderDir));
+        } else {
+            $query->order($db->escape($orderCol) . ' ' . $db->escape($orderDir));
+        }
 
         return $query;
     }
