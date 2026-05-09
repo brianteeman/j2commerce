@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 defined('_JEXEC') or die;
 
+use Joomla\CMS\Helper\ModuleHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\J2CommerceHelper;
 use J2Commerce\Component\J2commerce\Site\Service\ProductLayoutService;
 
@@ -26,7 +27,7 @@ if (empty($products)) {
 
 // Route to slider template if configured
 if ($layoutType === 'slider') {
-    require __DIR__ . '/slider.php';
+    require ModuleHelper::getLayoutPath('mod_j2commerce_products', 'slider');
     return;
 }
 
