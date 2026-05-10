@@ -14,6 +14,7 @@ namespace J2Commerce\Component\J2commerce\Administrator\Model;
 
 \defined('_JEXEC') or die;
 
+use J2Commerce\Component\J2commerce\Administrator\Helper\J2CommerceHelper;
 use Joomla\CMS\MVC\Model\ListModel;
 use Joomla\Database\ParameterType;
 use Joomla\Database\QueryInterface;
@@ -142,5 +143,34 @@ class TaxprofilesModel extends ListModel
         $query->order($ordering);
 
         return $query;
+    }
+
+    /**
+     * Override getItems to fire onJ2CommerceAfterGetTaxprofiles so plugins
+     * (e.g. app_taxrate, app_avalaratax) can inject virtual tax profiles.
+     *
+     * Plugins receive `result` (array of tax profile objects) and may
+     * append additional profiles via $event->setArgument('result', $list).
+     *
+     * Each profile is expected to expose at minimum:
+     *   j2commerce_taxprofile_id (int), taxprofile_name (string), enabled (int).
+     * Plugin-injected profiles SHOULD also set is_plugin = 1, edit_link,
+     * set_rates_link.
+     */
+    public function getItems()
+    {
+        $items = parent::getItems();
+
+        if ($items === false) {
+            return $items;
+        }
+
+        $event = J2CommerceHelper::plugin()->event('AfterGetTaxprofiles', [
+            'result' => is_array($items) ? $items : [],
+        ]);
+
+        $merged = $event->getEventResult();
+
+        return is_array($merged) ? $merged : $items;
     }
 }
