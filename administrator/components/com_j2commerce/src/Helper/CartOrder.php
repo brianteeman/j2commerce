@@ -232,6 +232,30 @@ class CartOrder
     public string $customer_note = '';
 
     /**
+     * Resolved customer country_id (set by getCustomerGeozones).
+     *
+     * @var    int
+     * @since  6.0.7
+     */
+    protected int $customerCountryId = 0;
+
+    /**
+     * Resolved customer zone_id (set by getCustomerGeozones).
+     *
+     * @var    int
+     * @since  6.0.7
+     */
+    protected int $customerZoneId = 0;
+
+    /**
+     * Resolved customer postcode (set by getCustomerGeozones).
+     *
+     * @var    string
+     * @since  6.0.7
+     */
+    protected string $customerPostcode = '';
+
+    /**
      * Constructor.
      *
      * @param   array  $items  Cart items.
@@ -454,29 +478,39 @@ class CartOrder
                 $taxprofileId = (int) ($item->taxprofile_id ?? 0);
 
                 if ($taxprofileId > 0 && !empty($customerGeozones)) {
-                    $taxInfo = $this->getTaxRateForGeozone($taxprofileId, $customerGeozones);
+                    $ratesets = $this->getTaxRatesForProfile($taxprofileId, $customerGeozones);
 
-                    if ($taxInfo !== null) {
-                        $itemTax = $itemPrice * $quantity * ((float) $taxInfo->tax_percent / 100);
-                        $taxTotal += $itemTax;
+                    if (!empty($ratesets)) {
+                        $itemTaxTotal = 0.0;
+                        $effectivePct = 0.0;
 
-                        // Store per-item tax for line item display
-                        $item->orderitem_tax         = $itemTax;
-                        $item->orderitem_tax_percent = (float) $taxInfo->tax_percent;
+                        foreach ($ratesets as $rate) {
+                            $rateName    = (string) ($rate->name ?? $rate->taxrate_name ?? '');
+                            $ratePercent = (float) ($rate->rate ?? $rate->tax_percent ?? 0);
+                            $rateId      = (int) ($rate->j2commerce_taxrate_id ?? 0);
+                            $rateAmount  = $itemPrice * $quantity * ($ratePercent / 100);
 
-                        $rateKey = $taxInfo->taxrate_name . '_' . $taxInfo->j2commerce_taxrate_id;
+                            $itemTaxTotal += $rateAmount;
+                            $effectivePct += $ratePercent;
 
-                        if (!isset($taxRates[$rateKey])) {
-                            $taxRates[$rateKey] = (object) [
-                                'taxprofile_id'   => $taxprofileId,
-                                'taxprofile_name' => $taxInfo->taxprofile_name ?? '',
-                                'taxrate_name'    => $taxInfo->taxrate_name,
-                                'tax_amount'      => 0.0,
-                                'tax_percent'     => (float) $taxInfo->tax_percent,
-                            ];
+                            $rateKey = $rateName . '_' . $rateId;
+
+                            if (!isset($taxRates[$rateKey])) {
+                                $taxRates[$rateKey] = (object) [
+                                    'taxprofile_id'   => $taxprofileId,
+                                    'taxprofile_name' => (string) ($rate->taxprofile_name ?? ''),
+                                    'taxrate_name'    => $rateName,
+                                    'tax_amount'      => 0.0,
+                                    'tax_percent'     => $ratePercent,
+                                ];
+                            }
+
+                            $taxRates[$rateKey]->tax_amount += $rateAmount;
                         }
 
-                        $taxRates[$rateKey]->tax_amount += $itemTax;
+                        $taxTotal                    += $itemTaxTotal;
+                        $item->orderitem_tax         = $itemTaxTotal;
+                        $item->orderitem_tax_percent = $effectivePct;
                     } else {
                         $item->orderitem_tax         = 0.0;
                         $item->orderitem_tax_percent = 0.0;
@@ -562,6 +596,7 @@ class CartOrder
         $session   = Factory::getApplication()->getSession();
         $countryId = 0;
         $zoneId    = 0;
+        $postcode  = '';
 
         // Priority 1: saved shipping address
         $addressId = (int) $session->get('shipping_address_id', 0, 'j2commerce');
@@ -569,7 +604,7 @@ class CartOrder
         if ($addressId > 0) {
             $db    = Factory::getContainer()->get(DatabaseInterface::class);
             $query = $db->getQuery(true)
-                ->select([$db->quoteName('country_id'), $db->quoteName('zone_id')])
+                ->select([$db->quoteName('country_id'), $db->quoteName('zone_id'), $db->quoteName('zip')])
                 ->from($db->quoteName('#__j2commerce_addresses'))
                 ->where($db->quoteName('j2commerce_address_id') . ' = :addrId')
                 ->bind(':addrId', $addressId, ParameterType::INTEGER);
@@ -580,6 +615,7 @@ class CartOrder
             if ($address) {
                 $countryId = (int) ($address->country_id ?? 0);
                 $zoneId    = (int) ($address->zone_id ?? 0);
+                $postcode  = (string) ($address->zip ?? '');
             }
         }
 
@@ -590,6 +626,7 @@ class CartOrder
             if (!empty($guestShipping) && \is_array($guestShipping)) {
                 $countryId = (int) ($guestShipping['country_id'] ?? 0);
                 $zoneId    = (int) ($guestShipping['zone_id'] ?? 0);
+                $postcode  = (string) ($guestShipping['zip'] ?? $guestShipping['postcode'] ?? '');
             }
         }
 
@@ -597,7 +634,13 @@ class CartOrder
         if ($countryId === 0) {
             $countryId = (int) $session->get('shipping_country_id', 0, 'j2commerce');
             $zoneId    = (int) $session->get('shipping_zone_id', 0, 'j2commerce');
+            $postcode  = (string) $session->get('shipping_postcode', '', 'j2commerce');
         }
+
+        // Cache resolved address for downstream tax-event dispatch.
+        $this->customerCountryId = $countryId;
+        $this->customerZoneId    = $zoneId;
+        $this->customerPostcode  = $postcode;
 
         if ($countryId === 0) {
             return [];
@@ -619,6 +662,56 @@ class CartOrder
         $db->setQuery($query);
 
         return $db->loadColumn() ?: [];
+    }
+
+    /**
+     * Resolve tax rates for a given tax profile against the current customer address.
+     *
+     * Builds an initial rateset from the geozone-matched DB rate (if any), then
+     * fires `onJ2CommerceAfterGetTaxRateItems` so plugins (Avalara, app_taxrate,
+     * etc.) can append, override, or replace rates based on the raw country/zone/
+     * postcode + address_type + taxprofile_id context.
+     *
+     * Each returned rate object exposes: j2commerce_taxrate_id, name, rate
+     * (percentage as float). Optional: taxprofile_name, tax_percent (alias),
+     * taxrate_name (alias).
+     *
+     * @param   int    $taxprofileId  The tax profile ID for the line item.
+     * @param   array  $geozoneIds    Resolved geozone IDs for the customer.
+     *
+     * @return  array  Array of rate objects (may be empty).
+     *
+     * @since   6.0.7
+     */
+    private function getTaxRatesForProfile(int $taxprofileId, array $geozoneIds): array
+    {
+        $ratesets = [];
+
+        $taxInfo = $this->getTaxRateForGeozone($taxprofileId, $geozoneIds);
+
+        if ($taxInfo !== null) {
+            $rate                         = new \stdClass();
+            $rate->j2commerce_taxrate_id  = (int) ($taxInfo->j2commerce_taxrate_id ?? 0);
+            $rate->name                   = (string) ($taxInfo->taxrate_name ?? '');
+            $rate->taxrate_name           = $rate->name;
+            $rate->rate                   = (float) ($taxInfo->tax_percent ?? 0);
+            $rate->tax_percent            = $rate->rate;
+            $rate->taxprofile_name        = (string) ($taxInfo->taxprofile_name ?? '');
+            $ratesets[]                   = $rate;
+        }
+
+        $event = J2CommerceHelper::plugin()->event('AfterGetTaxRateItems', [
+            'result'        => $ratesets,
+            'address_type'  => 'shipping',
+            'country_id'    => $this->customerCountryId,
+            'zone_id'       => $this->customerZoneId,
+            'postcode'      => $this->customerPostcode,
+            'taxprofile_id' => $taxprofileId,
+        ]);
+
+        $merged = $event->getEventResult();
+
+        return is_array($merged) ? $merged : $ratesets;
     }
 
     private function getTaxRateForGeozone(int $taxprofileId, array $geozoneIds): ?object
