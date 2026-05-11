@@ -112,7 +112,7 @@
             label="COM_J2COMMERCE_INVOICETEMPLATE_BODY"
             description="COM_J2COMMERCE_INVOICETEMPLATE_BODY_DESC"
             required="true"
-            filter="JComponentHelper::filterText"
+            filter="Joomla\CMS\Component\ComponentHelper::filterText"
             buttons="true"
             syntax="html"
             height="400"

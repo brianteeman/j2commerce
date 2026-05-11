@@ -61,7 +61,7 @@ VALUES  (1, 'Packing Slip', 'packingslip', '*', '1', '*', '<!-- J2Commerce Packi
 </tr>
 <!-- Items Card (NO PRICES) -->
 <tr>
-<td class="mobile-padding" style="padding: 16px 20px;">[ITEMS_LOOP] [/ITEMS_LOOP]
+<td class="mobile-padding" style="padding: 16px 20px;">
 <table style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;" border="0" width="100%" cellspacing="0" cellpadding="0"><!-- Card Header -->
 <tbody>
 <tr>
@@ -74,16 +74,8 @@ VALUES  (1, 'Packing Slip', 'packingslip', '*', '1', '*', '<!-- J2Commerce Packi
 <td style="padding: 10px 20px; font-size: 11px; font-weight: bold; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; width: 70px;">Packed ✓</td>
 </tr>
 <!-- Items -->
-<tr>
-<td style="padding: 12px 0 12px 20px; border-top: 1px solid #f3f4f6; vertical-align: top; width: 60px;">[IF:ITEM_IMAGE] <img class="item-img" style="border-radius: 6px; object-fit: cover; display: block; border: 1px solid #f3f4f6;" src="[ITEM_IMAGE]" alt="[ITEM_NAME]" width="50" height="50"> [/IF:ITEM_IMAGE] [IFNOT:ITEM_IMAGE]
-<table border="0" cellspacing="0" cellpadding="0">
-<tbody>
-<tr>
-<td style="width: 50px; height: 50px; background-color: #f3f4f6; border-radius: 6px; text-align: center; vertical-align: middle; font-size: 20px; color: #d1d5db;">📦</td>
-</tr>
-</tbody>
-</table>
-[/IFNOT:ITEM_IMAGE]</td>
+[ITEMS_LOOP]<tr>
+<td style="padding: 12px 0 12px 20px; border-top: 1px solid #f3f4f6; vertical-align: top; width: 60px;">[IF:ITEM_IMAGE] <img class="item-img" style="border-radius: 6px; object-fit: cover; display: block; border: 1px solid #f3f4f6;" src="[ITEM_IMAGE]" alt="[ITEM_NAME]" width="50" height="50"> [/IF:ITEM_IMAGE]</td>
 <td style="padding: 12px 10px; border-top: 1px solid #f3f4f6; vertical-align: top;"><span style="font-size: 14px; font-weight: 600; color: #1f2937;">[ITEM_NAME]</span> [IF:ITEM_SKU]<br><span style="font-size: 12px; color: #9ca3af;">SKU: [ITEM_SKU]</span>[/IF:ITEM_SKU] [IF:ITEM_OPTIONS]<br><span style="font-size: 12px; color: #6b7280;">[ITEM_OPTIONS]</span>[/IF:ITEM_OPTIONS] [IF:ITEM_WEIGHT]<br><span style="font-size: 12px; color: #9ca3af;">Weight: [ITEM_WEIGHT]</span>[/IF:ITEM_WEIGHT]</td>
 <td style="padding: 12px 10px; border-top: 1px solid #f3f4f6; text-align: center; vertical-align: top; font-size: 18px; font-weight: bold; color: #1f2937;">[ITEM_QTY]</td>
 <td style="padding: 12px 20px; border-top: 1px solid #f3f4f6; text-align: center; vertical-align: top;"><!-- Checkbox placeholder for warehouse staff -->
@@ -95,7 +87,7 @@ VALUES  (1, 'Packing Slip', 'packingslip', '*', '1', '*', '<!-- J2Commerce Packi
 </tbody>
 </table>
 </td>
-</tr>
+</tr>[/ITEMS_LOOP]
 <!-- Total Items Count -->
 <tr>
 <td style="padding: 14px 20px; background-color: #f9fafb; border-top: 1px solid #e5e7eb;" colspan="4">
@@ -199,7 +191,7 @@ VALUES  (1, 'Packing Slip', 'packingslip', '*', '1', '*', '<!-- J2Commerce Packi
 </tr>
 </tbody>
 </table>
-<h1 style="margin: 14px 0 4px 0; font-size: 24px; font-weight: bold; color: #ffffff; text-transform: uppercase; letter-spacing: 1px;">Invoice</h1>
+<h1 style="margin: 14px 0 4px 0; font-size: 24px; font-weight: bold; color: #ffffff; text-transform: uppercase; letter-spacing: 1px;">[SITENAME]</h1>
 <p style="margin: 0; font-size: 14px; color: rgba(255,255,255,0.85);">Order #[ORDERID] • [ORDERDATE]</p>
 </td>
 </tr>
@@ -241,7 +233,7 @@ VALUES  (1, 'Packing Slip', 'packingslip', '*', '1', '*', '<!-- J2Commerce Packi
 </tr>
 <!-- Items Table WITH Prices -->
 <tr>
-<td class="mobile-padding" style="padding: 16px 20px;">[ITEMS_LOOP] [/ITEMS_LOOP]
+<td class="mobile-padding" style="padding: 16px 20px;">
 <table style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;" border="0" width="100%" cellspacing="0" cellpadding="0">
 <tbody>
 <tr>
@@ -253,21 +245,13 @@ VALUES  (1, 'Packing Slip', 'packingslip', '*', '1', '*', '<!-- J2Commerce Packi
 <td style="padding: 10px 10px; font-size: 11px; font-weight: bold; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; text-align: right; width: 80px;">Price</td>
 <td style="padding: 10px 20px; font-size: 11px; font-weight: bold; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; text-align: right; width: 90px;">Total</td>
 </tr>
-<tr>
-<td style="padding: 12px 0 12px 20px; border-top: 1px solid #f3f4f6; vertical-align: top; width: 60px;">[IF:ITEM_IMAGE] <img style="border-radius: 6px; object-fit: cover; display: block; border: 1px solid #f3f4f6;" alt="[ITEM_NAME]" width="50" height="50"  src="[ITEM_IMAGE]"> [/IF:ITEM_IMAGE] [IFNOT:ITEM_IMAGE]
-<table border="0" cellspacing="0" cellpadding="0">
-<tbody>
-<tr>
-<td style="width: 50px; height: 50px; background-color: #f3f4f6; border-radius: 6px; text-align: center; vertical-align: middle; font-size: 20px; color: #d1d5db;">📦</td>
-</tr>
-</tbody>
-</table>
-[/IFNOT:ITEM_IMAGE]</td>
+[ITEMS_LOOP]<tr>
+<td style="padding: 12px 0 12px 20px; border-top: 1px solid #f3f4f6; vertical-align: top; width: 60px;">[IF:ITEM_IMAGE] <img style="border-radius: 6px; object-fit: cover; display: block; border: 1px solid #f3f4f6;" alt="[ITEM_NAME]" width="50" height="50"  src="[ITEM_IMAGE]"> [/IF:ITEM_IMAGE]</td>
 <td style="padding: 12px 10px; border-top: 1px solid #f3f4f6; vertical-align: top;"><span style="font-size: 14px; font-weight: 600; color: #1f2937;">[ITEM_NAME]</span> [IF:ITEM_SKU]<br><span style="font-size: 12px; color: #9ca3af;">SKU: [ITEM_SKU]</span>[/IF:ITEM_SKU] [IF:ITEM_OPTIONS]<br><span style="font-size: 12px; color: #6b7280;">[ITEM_OPTIONS]</span>[/IF:ITEM_OPTIONS]</td>
 <td style="padding: 12px 10px; border-top: 1px solid #f3f4f6; text-align: center; vertical-align: top; font-size: 14px; color: #1f2937;">[ITEM_QTY]</td>
 <td style="padding: 12px 10px; border-top: 1px solid #f3f4f6; text-align: right; vertical-align: top; font-size: 14px; color: #1f2937;">[ITEM_PRICE]</td>
 <td style="padding: 12px 20px; border-top: 1px solid #f3f4f6; text-align: right; vertical-align: top; font-size: 14px; font-weight: 600; color: #1f2937;">[ITEM_TOTAL]</td>
-</tr>
+</tr>[/ITEMS_LOOP]
 <!-- Totals -->
 <tr>
 <td style="padding: 0 20px; border-top: 2px solid #e5e7eb;" colspan="5">[IF:SHIPPING_AMOUNT] [/IF:SHIPPING_AMOUNT] [IF:TAX_AMOUNT] [/IF:TAX_AMOUNT] [IF:DISCOUNT_AMOUNT] [/IF:DISCOUNT_AMOUNT]
@@ -467,7 +451,7 @@ VALUES  (1, 'Packing Slip', 'packingslip', '*', '1', '*', '<!-- J2Commerce Packi
 </tr>
 <!-- Items Table -->
 <tr>
-<td class="mobile-padding" style="padding: 16px 20px;">[ITEMS_LOOP] [/ITEMS_LOOP]
+<td class="mobile-padding" style="padding: 16px 20px;">
 <table style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;" border="0" width="100%" cellspacing="0" cellpadding="0">
 <tbody>
 <tr>
@@ -479,12 +463,12 @@ VALUES  (1, 'Packing Slip', 'packingslip', '*', '1', '*', '<!-- J2Commerce Packi
 <td style="padding: 10px 10px; font-size: 11px; font-weight: bold; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; text-align: right; width: 80px;">Price</td>
 <td style="padding: 10px 20px; font-size: 11px; font-weight: bold; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; text-align: right; width: 90px;">Total</td>
 </tr>
-<tr>
+[ITEMS_LOOP]<tr>
 <td style="padding: 12px 20px; border-top: 1px solid #f3f4f6; vertical-align: top;"><span style="font-size: 14px; font-weight: 600; color: #1f2937;">[ITEM_NAME]</span> [IF:ITEM_SKU]<br><span style="font-size: 12px; color: #9ca3af;">SKU: [ITEM_SKU]</span>[/IF:ITEM_SKU] [IF:ITEM_OPTIONS]<br><span style="font-size: 12px; color: #6b7280;">[ITEM_OPTIONS]</span>[/IF:ITEM_OPTIONS]</td>
 <td style="padding: 12px 10px; border-top: 1px solid #f3f4f6; text-align: center; vertical-align: top; font-size: 14px; color: #1f2937;">[ITEM_QTY]</td>
 <td style="padding: 12px 10px; border-top: 1px solid #f3f4f6; text-align: right; vertical-align: top; font-size: 14px; color: #1f2937;">[ITEM_PRICE]</td>
 <td style="padding: 12px 20px; border-top: 1px solid #f3f4f6; text-align: right; vertical-align: top; font-size: 14px; font-weight: 600; color: #1f2937;">[ITEM_TOTAL]</td>
-</tr>
+</tr>[/ITEMS_LOOP]
 <!-- Totals -->
 <tr>
 <td style="padding: 0 20px; border-top: 2px solid #e5e7eb;" colspan="4">[IF:SHIPPING_AMOUNT] [/IF:SHIPPING_AMOUNT] [IF:TAX_AMOUNT] [/IF:TAX_AMOUNT] [IF:DISCOUNT_AMOUNT] [/IF:DISCOUNT_AMOUNT]
