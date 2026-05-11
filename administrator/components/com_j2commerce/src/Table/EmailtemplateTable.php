@@ -129,8 +129,8 @@ class EmailtemplateTable extends Table
             return false;
         }
 
-        // Validate body_source against allowed values
-        $allowedBodySources = ['editor', 'visual', 'file'];
+        // Validate body_source against allowed values ('html' kept as legacy J2Store alias for read-back)
+        $allowedBodySources = ['editor', 'visual', 'file', 'html'];
         if (!\in_array($this->body_source, $allowedBodySources)) {
             $this->setError(Text::_('COM_J2COMMERCE_ERROR_EMAILTEMPLATE_INVALID_BODY_SOURCE'));
             return false;
