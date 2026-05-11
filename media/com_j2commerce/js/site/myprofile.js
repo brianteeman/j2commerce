@@ -82,8 +82,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const { orders, total, limit } = json;
 
             if (!orders.length) {
+                const emptyKey = search ? 'COM_J2COMMERCE_NO_ORDERS_MATCH_SEARCH' : 'COM_J2COMMERCE_NO_ORDERS';
                 wrap.innerHTML = `<div class="alert alert-info" id="${snapshotNoOrdersId}">`
-                    + (Joomla.Text._('COM_J2COMMERCE_NO_ORDERS')) + '</div>';
+                    + (Joomla.Text._(emptyKey)) + '</div>';
                 wrap.style.opacity = '1';
                 return;
             }
