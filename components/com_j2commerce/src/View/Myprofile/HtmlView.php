@@ -198,6 +198,7 @@ class HtmlView extends BaseHtmlView
         Text::script('COM_J2COMMERCE_ORDER_AMOUNT');
         Text::script('COM_J2COMMERCE_ACTIONS');
         Text::script('COM_J2COMMERCE_NO_ORDERS');
+        Text::script('COM_J2COMMERCE_NO_ORDERS_MATCH_SEARCH');
         Text::script('COM_J2COMMERCE_ITEMS');
         // Pre-compute sprintf string for JS since Text::script() doesn't support sprintf
         Text::script('COM_J2COMMERCE_SELECT_ZONE', Text::sprintf('COM_J2COMMERCE_SELECT_PLACEHOLDER', Text::_('COM_J2COMMERCE_ZONE')));
