@@ -28,9 +28,9 @@ $user   = $this->user;
     <?php endif; ?>
 
     <?php if ($params->get('show_logout_myprofile', 0) && $user->id > 0): ?>
-    <div class="d-flex justify-content-end mb-3">
+    <div class="uk-flex uk-flex-right uk-margin-bottom">
         <form action="<?php echo Route::_('index.php'); ?>" method="post">
-            <button type="submit" class="btn btn-outline-danger btn-sm text-capitalize"><?php echo Text::_('JLOGOUT'); ?></button>
+            <button type="submit" class="uk-button uk-button-danger uk-button-small"><?php echo Text::_('JLOGOUT'); ?></button>
             <input type="hidden" name="option" value="com_users">
             <input type="hidden" name="task" value="user.logout">
             <input type="hidden" name="return" value="<?php echo base64_encode(Route::_('index.php?option=com_j2commerce&view=myprofile', false)); ?>">
@@ -42,104 +42,92 @@ $user   = $this->user;
     <div class="j2commerce-myprofile">
 
         <?php if (!empty($this->topMessagesHtml)): ?>
-        <div class="j2commerce-myprofile-messages mb-3"><?php echo $this->topMessagesHtml; ?></div>
+        <div class="j2commerce-myprofile-messages uk-margin-bottom"><?php echo $this->topMessagesHtml; ?></div>
         <?php endif; ?>
 
-        <ul class="nav nav-tabs d-flex justify-content-center border-0 rounded-0 bg-transparent" id="j2commerceProfileTabs" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="orders-tab" data-bs-toggle="tab"
-                    data-bs-target="#orders-pane" type="button" role="tab"
-                    aria-controls="orders-pane" aria-selected="true">
-                    <span class="fa-solid fa-receipt me-1" aria-hidden="true"></span>
+        <ul class="uk-tab uk-flex-center" id="j2commerceProfileTabs" uk-tab>
+            <li>
+                <a href="#">
+                    <span uk-icon="icon: file-text" class="uk-margin-small-right" aria-hidden="true"></span>
                     <?php echo Text::_('COM_J2COMMERCE_MYPROFILE_ORDERS'); ?>
-                </button>
+                </a>
             </li>
 
             <?php if ($params->get('download_area', 1)): ?>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="downloads-tab" data-bs-toggle="tab"
-                    data-bs-target="#downloads-pane" type="button" role="tab"
-                    aria-controls="downloads-pane" aria-selected="false">
-                    <span class="fa-solid fa-download me-1" aria-hidden="true"></span>
+            <li>
+                <a href="#">
+                    <span uk-icon="icon: download" class="uk-margin-small-right" aria-hidden="true"></span>
                     <?php echo Text::_('COM_J2COMMERCE_MYPROFILE_DOWNLOADS'); ?>
-                </button>
+                </a>
             </li>
             <?php endif; ?>
 
             <?php if ($user->id > 0): ?>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="addresses-tab" data-bs-toggle="tab"
-                    data-bs-target="#addresses-pane" type="button" role="tab"
-                    aria-controls="addresses-pane" aria-selected="false">
-                    <span class="fa-solid fa-map-marker me-1" aria-hidden="true"></span>
+            <li>
+                <a href="#">
+                    <span uk-icon="icon: location" class="uk-margin-small-right" aria-hidden="true"></span>
                     <?php echo Text::_('COM_J2COMMERCE_MYPROFILE_ADDRESSES'); ?>
-                </button>
+                </a>
             </li>
             <?php endif; ?>
 
             <?php if ($this->useUnifiedPaymentTab) : ?>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="payment-methods-tab" data-bs-toggle="tab"
-                    data-bs-target="#payment-methods-pane" type="button" role="tab"
-                    aria-controls="payment-methods-pane" aria-selected="false">
-                    <span class="fa-solid fa-credit-card me-1" aria-hidden="true"></span>
+            <li>
+                <a href="#">
+                    <span uk-icon="icon: credit-card" class="uk-margin-small-right" aria-hidden="true"></span>
                     <?php echo Text::_('COM_J2COMMERCE_PAYMENT_METHODS_TITLE'); ?>
-                </button>
+                </a>
             </li>
             <?php endif; ?>
 
             <?php echo $this->pluginTabHtml; ?>
         </ul>
 
-        <div class="tab-content pt-4 px-0 border-0 box-shadow-none" id="j2commerceProfileTabContent">
-            <div class="tab-pane fade show active" id="orders-pane" role="tabpanel" aria-labelledby="orders-tab">
+        <ul class="uk-switcher uk-margin-top" id="j2commerceProfileTabContent">
+            <li>
                 <?php echo $this->loadTemplate('orders'); ?>
-            </div>
+            </li>
 
             <?php if ($params->get('download_area', 1)): ?>
-            <div class="tab-pane fade" id="downloads-pane" role="tabpanel" aria-labelledby="downloads-tab">
+            <li>
                 <?php echo $this->loadTemplate('downloads'); ?>
-            </div>
+            </li>
             <?php endif; ?>
 
             <?php if ($user->id > 0): ?>
-            <div class="tab-pane fade" id="addresses-pane" role="tabpanel" aria-labelledby="addresses-tab">
+            <li>
                 <?php echo $this->loadTemplate('addresses'); ?>
-            </div>
+            </li>
             <?php endif; ?>
 
             <?php if ($this->useUnifiedPaymentTab) : ?>
-            <div class="tab-pane fade" id="payment-methods-pane" role="tabpanel" aria-labelledby="payment-methods-tab">
+            <li>
                 <?php echo $this->loadTemplate('payment_methods'); ?>
-            </div>
+            </li>
             <?php endif; ?>
 
             <?php echo $this->pluginContentHtml; ?>
-        </div>
+        </ul>
     </div>
 </div>
 
 <!-- Order Print Modal -->
-<div class="modal fade" id="j2commerceOrderModal" tabindex="-1" aria-labelledby="j2commerceOrderModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 class="modal-title fs-5" id="j2commerceOrderModalLabel"><?php echo Text::_('COM_J2COMMERCE_ORDER_PRINT'); ?></h2>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?php echo Text::_('JCLOSE'); ?>"></button>
+<div id="j2commerceOrderModal" uk-modal>
+    <div class="uk-modal-dialog uk-modal-body">
+        <div class="uk-modal-header">
+            <h2 class="uk-modal-title" id="j2commerceOrderModalLabel"><?php echo Text::_('COM_J2COMMERCE_ORDER_PRINT'); ?></h2>
+            <button class="uk-modal-close-default" type="button" uk-close aria-label="<?php echo Text::_('JCLOSE'); ?>"></button>
+        </div>
+        <div class="uk-modal-body" id="j2commerceOrderModalBody">
+            <div class="uk-text-center uk-padding">
+                <span uk-spinner="ratio: 2" role="status" aria-label="<?php echo Text::_('COM_J2COMMERCE_LOADING'); ?>"></span>
             </div>
-            <div class="modal-body" id="j2commerceOrderModalBody">
-                <div class="text-center py-5">
-                    <div class="spinner-border" role="status">
-                        <span class="visually-hidden"><?php echo Text::_('COM_J2COMMERCE_LOADING'); ?></span>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?php echo Text::_('JCLOSE'); ?></button>
-                <button type="button" class="btn btn-primary" id="j2commerceOrderPrintBtn">
-                    <span class="icon-print" aria-hidden="true"></span> <?php echo Text::_('COM_J2COMMERCE_ORDER_PRINT'); ?>
-                </button>
-            </div>
+        </div>
+        <div class="uk-modal-footer uk-text-right">
+            <button type="button" class="uk-button uk-button-default uk-modal-close"><?php echo Text::_('JCLOSE'); ?></button>
+            <button type="button" class="uk-button uk-button-primary" id="j2commerceOrderPrintBtn">
+                <span class="icon-print" aria-hidden="true"></span> <?php echo Text::_('COM_J2COMMERCE_ORDER_PRINT'); ?>
+            </button>
         </div>
     </div>
 </div>

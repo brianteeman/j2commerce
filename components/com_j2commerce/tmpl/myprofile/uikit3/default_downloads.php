@@ -26,26 +26,26 @@ $nullDate   = '0000-00-00 00:00:00';
 ?>
 
 <?php if (empty($downloads) && $total === 0): ?>
-<div class="alert alert-info" id="j2c-no-downloads"><?php echo Text::_('COM_J2COMMERCE_NO_DOWNLOADS'); ?></div>
+<div class="uk-alert uk-alert-primary" id="j2c-no-downloads" uk-alert><?php echo Text::_('COM_J2COMMERCE_NO_DOWNLOADS'); ?></div>
 <?php else: ?>
 <div id="j2c-downloads-container">
-    <h4 class="mb-4"><?php echo Text::_('COM_J2COMMERCE_MYPROFILE_DOWNLOADS'); ?></h4>
+    <h4 class="uk-margin-bottom"><?php echo Text::_('COM_J2COMMERCE_MYPROFILE_DOWNLOADS'); ?></h4>
     <!-- Search -->
-    <div class="mb-3">
-        <input type="text" id="j2c-download-search" class="form-control" placeholder="<?php echo $this->escape(Text::_('COM_J2COMMERCE_MYPROFILE_SEARCH_DOWNLOADS')); ?>" autocomplete="off">
+    <div class="uk-margin-bottom">
+        <input type="text" id="j2c-download-search" class="uk-input" placeholder="<?php echo $this->escape(Text::_('COM_J2COMMERCE_MYPROFILE_SEARCH_DOWNLOADS')); ?>" autocomplete="off">
     </div>
 
     <!-- Downloads table -->
     <div id="j2c-downloads-table-wrap">
-        <div class="table-responsive">
-            <table class="table" id="j2c-downloads-table">
+        <div class="uk-overflow-auto">
+            <table class="uk-table uk-table-striped" id="j2c-downloads-table">
                 <thead>
                     <tr>
                         <th scope="col"><?php echo Text::_('COM_J2COMMERCE_ORDER'); ?></th>
                         <th scope="col"><?php echo Text::_('COM_J2COMMERCE_FILES'); ?></th>
                         <th scope="col"><?php echo Text::_('COM_J2COMMERCE_ACCESS_EXPIRES'); ?></th>
-                        <th scope="col" class="text-center"><?php echo Text::_('COM_J2COMMERCE_DOWNLOADS_REMAINING'); ?></th>
-                        <th scope="col" class="text-center" style="width:1%"><span class="visually-hidden"><?php echo Text::_('COM_J2COMMERCE_ACTIONS'); ?></span></th>
+                        <th scope="col" class="uk-text-center"><?php echo Text::_('COM_J2COMMERCE_DOWNLOADS_REMAINING'); ?></th>
+                        <th scope="col" class="uk-text-center" style="width:1%"><span class="uk-hidden-visually"><?php echo Text::_('COM_J2COMMERCE_ACTIONS'); ?></span></th>
                     </tr>
                 </thead>
                 <tbody id="j2c-downloads-body">
@@ -80,37 +80,37 @@ $nullDate   = '0000-00-00 00:00:00';
                         <td><a href="<?php echo $orderViewUrl; ?>" title="<?php echo $this->escape($dl->order_id); ?>"><?php echo $this->escape($dl->order_id); ?></a></td>
                         <td>
                             <?php if (!empty($displayName)): ?>
-                                <small class="fw-medium"><?php echo $this->escape($displayName); ?></small>
+                                <small class="uk-text-bold"><?php echo $this->escape($displayName); ?></small>
                             <?php else: ?>
-                                <span class="text-muted fst-italic"><?php echo Text::_('COM_J2COMMERCE_FILE_UNAVAILABLE'); ?></span>
+                                <span class="uk-text-meta"><em><?php echo Text::_('COM_J2COMMERCE_FILE_UNAVAILABLE'); ?></em></span>
                             <?php endif; ?>
                         </td>
                         <td>
                             <?php if ($notGranted): ?>
-                                <span class="badge text-bg-dark"><?php echo Text::_('COM_J2COMMERCE_DOWNLOAD_PENDING'); ?></span>
+                                <span class="uk-badge"><?php echo Text::_('COM_J2COMMERCE_DOWNLOAD_PENDING'); ?></span>
                             <?php elseif ($dl->access_expires === $nullDate): ?>
                                 <?php echo Text::_('COM_J2COMMERCE_NEVER_EXPIRES'); ?>
                             <?php else: ?>
                                 <?php echo HTMLHelper::_('date', $dl->access_expires, $dateFormat); ?>
                             <?php endif; ?>
                         </td>
-                        <td class="text-center">
+                        <td class="uk-text-center">
                             <?php echo $remaining >= 0 ? $remaining : '&infin;'; ?>
                         </td>
-                        <td class="text-center">
+                        <td class="uk-text-center">
                             <?php if ($canDownload): ?>
                             <a href="<?php echo Route::_('index.php?option=com_j2commerce&task=myprofile.download&token=' . urlencode($dl->order_id) . '&fid=' . (int) $dl->j2commerce_productfile_id); ?>"
-                               class="btn btn-sm btn-soft-success" title="<?php echo Text::_('COM_J2COMMERCE_DOWNLOAD'); ?>">
+                               class="uk-button uk-button-small uk-button-primary" title="<?php echo Text::_('COM_J2COMMERCE_DOWNLOAD'); ?>">
                                 <span class="icon-download" aria-hidden="true"></span>
                             </a>
                             <?php elseif ($notGranted): ?>
-                            <span class="badge text-bg-dark"><?php echo Text::_('COM_J2COMMERCE_DOWNLOAD_PENDING'); ?></span>
+                            <span class="uk-badge"><?php echo Text::_('COM_J2COMMERCE_DOWNLOAD_PENDING'); ?></span>
                             <?php elseif ($expired): ?>
-                            <span class="badge text-bg-danger"><?php echo Text::_('COM_J2COMMERCE_EXPIRED'); ?></span>
+                            <span class="uk-badge uk-badge-danger"><?php echo Text::_('COM_J2COMMERCE_EXPIRED'); ?></span>
                             <?php elseif ($limitReached): ?>
-                            <span class="badge text-bg-warning"><?php echo Text::_('COM_J2COMMERCE_LIMIT_REACHED'); ?></span>
+                            <span class="uk-badge uk-badge-warning"><?php echo Text::_('COM_J2COMMERCE_LIMIT_REACHED'); ?></span>
                             <?php else: ?>
-                            <span class="badge text-bg-dark"><?php echo Text::_('COM_J2COMMERCE_FILE_UNAVAILABLE'); ?></span>
+                            <span class="uk-badge"><?php echo Text::_('COM_J2COMMERCE_FILE_UNAVAILABLE'); ?></span>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -120,27 +120,27 @@ $nullDate   = '0000-00-00 00:00:00';
         </div>
 
         <!-- Pagination -->
-        <div class="d-flex justify-content-end align-items-center" id="j2c-downloads-pagination">
+        <div class="uk-flex uk-flex-right uk-flex-middle" id="j2c-downloads-pagination">
             <?php
             $start = 1;
             $end   = min($limit, $total);
             ?>
             <?php if ($total > $limit): ?>
             <nav aria-label="<?php echo Text::_('JLIB_HTML_PAGINATION'); ?>">
-                <ul class="pagination my-0" id="j2c-downloads-pagination-list">
+                <ul class="uk-pagination uk-margin-remove" id="j2c-downloads-pagination-list">
                     <?php
                     $pages = (int) ceil($total / $limit);
                     for ($p = 0; $p < $pages; $p++):
-                        $active = ($p === 0) ? ' active' : '';
+                        $active = ($p === 0) ? ' uk-active' : '';
                     ?>
-                    <li class="page-item<?php echo $active; ?>">
-                        <a class="page-link j2c-download-page-link" href="#" data-page="<?php echo $p; ?>"><?php echo $p + 1; ?></a>
+                    <li class="<?php echo $active; ?>">
+                        <a class="j2c-download-page-link" href="#" data-page="<?php echo $p; ?>"><?php echo $p + 1; ?></a>
                     </li>
                     <?php endfor; ?>
                 </ul>
             </nav>
             <?php endif; ?>
-            <span class="text-muted small ms-3 align-self-center" id="j2c-downloads-count">
+            <span class="uk-text-meta uk-text-small uk-margin-small-left" id="j2c-downloads-count">
                 <?php echo $start . ' - ' . $end . ' / ' . $total . ' ' . Text::_('COM_J2COMMERCE_ITEMS'); ?>
             </span>
         </div>

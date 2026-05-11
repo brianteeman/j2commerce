@@ -20,7 +20,7 @@ use Joomla\Database\DatabaseInterface;
 $order = $this->order;
 
 if (!$order || empty($order->order_id)) {
-    echo '<div class="alert alert-danger">' . Text::_('COM_J2COMMERCE_ORDER_MISMATCH') . '</div>';
+    echo '<div class="uk-alert uk-alert-danger" uk-alert>' . Text::_('COM_J2COMMERCE_ORDER_MISMATCH') . '</div>';
     return;
 }
 

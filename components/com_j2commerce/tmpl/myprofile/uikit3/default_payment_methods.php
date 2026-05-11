@@ -17,22 +17,20 @@ use Joomla\CMS\Session\Session;
 
 /** @var \J2Commerce\Component\J2commerce\Site\View\Myprofile\HtmlView $this */
 
-HTMLHelper::_('bootstrap.dropdown', '.dropdown-toggle', []);
-
 $groupedMethods = $this->paymentMethodsGrouped;
 $csrfToken = Session::getFormToken();
 ?>
 
 <div class="j2commerce-payment-methods" data-csrf-token="<?php echo htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
-    <h2 class="mb-4 fs-4"><?php echo Text::_('COM_J2COMMERCE_PAYMENT_METHODS_TITLE'); ?></h2>
+    <h2 class="uk-h4 uk-margin-bottom"><?php echo Text::_('COM_J2COMMERCE_PAYMENT_METHODS_TITLE'); ?></h2>
 
     <?php if (empty($groupedMethods)) : ?>
-        <div class="alert alert-info" role="alert">
-            <span class="fa-solid fa-info-circle me-2" aria-hidden="true"></span>
+        <div class="uk-alert uk-alert-primary" uk-alert role="alert">
+            <span uk-icon="icon: info" class="uk-margin-small-right" aria-hidden="true"></span>
             <?php echo Text::_('COM_J2COMMERCE_PAYMENT_METHODS_NO_SAVED'); ?>
         </div>
     <?php else : ?>
-        <div class="j2commerce-payment-providers mb-4">
+        <div class="j2commerce-payment-providers uk-margin-bottom">
             <?php foreach ($groupedMethods as $provider => $methods) :
                 $providerName = \J2Commerce\Component\J2commerce\Administrator\Helper\PaymentMethodsHelper::getProviderDisplayName($provider);
                 $value = strtolower($providerName);
@@ -46,50 +44,56 @@ $csrfToken = Session::getFormToken();
                         <?php foreach ($methods as $method) :
                             $lastFour = htmlspecialchars($method->last4, ENT_QUOTES, 'UTF-8');
                             ?>
-                            <div class="j2commerce-payment-method mb-3">
-                                <div class="border py-3 px-4 rounded-3 mb-3 j2commerce-payment-card" data-provider="<?php echo htmlspecialchars($method->provider, ENT_QUOTES, 'UTF-8'); ?>" data-method-id="<?php echo (int) $method->id; ?>">
-                                    <div class="j2commerce-payment-method-inner d-flex justify-content-between align-items-center">
-                                        <div class="j2commerce-payment-method-details d-flex align-items-center">
+                            <div class="j2commerce-payment-method uk-margin-bottom">
+                                <div class="uk-card uk-card-default uk-card-small j2commerce-payment-card" data-provider="<?php echo htmlspecialchars($method->provider, ENT_QUOTES, 'UTF-8'); ?>" data-method-id="<?php echo (int) $method->id; ?>">
+                                    <div class="uk-card-body uk-flex uk-flex-between uk-flex-middle">
+                                        <div class="j2commerce-payment-method-details uk-flex uk-flex-middle" style="gap: 12px;">
                                             <?php if($method->getBrandIcon()):?>
-                                                <div class="j2commerce-card-icon me-3">
-                                                    <img src="<?php echo htmlspecialchars($method->getBrandIcon(), ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars(ucfirst($method->brand), ENT_QUOTES, 'UTF-8'); ?>" class="img-fluid me-3" style="max-height: 50px;width: auto;" loading="lazy">
+                                                <div class="j2commerce-card-icon">
+                                                    <img src="<?php echo htmlspecialchars($method->getBrandIcon(), ENT_QUOTES, 'UTF-8'); ?>" alt="<?php echo htmlspecialchars(ucfirst($method->brand), ENT_QUOTES, 'UTF-8'); ?>" style="max-height: 50px; width: auto;" loading="lazy">
                                                 </div>
                                             <?php endif;?>
                                             <div>
-                                                <h3 class="mb-0 fs-6"><?php echo htmlspecialchars(ucfirst($method->brand), ENT_QUOTES, 'UTF-8'); ?> <?php if($lastFour): echo Text::sprintf('COM_J2COMMERCE_PAYMENT_METHODS_ENDING_IN',$lastFour); endif;?>
+                                                <h3 class="uk-margin-remove uk-text-small"><?php echo htmlspecialchars(ucfirst($method->brand), ENT_QUOTES, 'UTF-8'); ?> <?php if($lastFour): echo Text::sprintf('COM_J2COMMERCE_PAYMENT_METHODS_ENDING_IN',$lastFour); endif;?>
                                                 <?php if ($method->isDefault) : ?>
-                                                    <span class="badge text-bg-info ms-2">
+                                                    <span class="uk-badge uk-margin-small-left">
                                                         <?php echo Text::_('COM_J2COMMERCE_PAYMENT_METHODS_DEFAULT'); ?>
                                                     </span>
                                                 <?php endif; ?>
                                                 </h3>
                                                 <?php if ($method->getFormattedExpiry()) : ?>
-                                                    <small class="d-block">
+                                                    <small class="uk-display-block">
                                                         <?php echo Text::sprintf('COM_J2COMMERCE_PAYMENT_METHODS_EXPIRES', $method->getFormattedExpiry()); ?>
                                                     </small>
                                                 <?php endif; ?>
                                             </div>
                                         </div>
-                                        <div class="d-flex align-items-center">
-                                        <span class="dropdown dropstart">
-                                           <button type="button" class="btn btn-link text-reset dropdown-toggle p-0" id="paymentDropdown<?php echo (int) $method->id; ?>" data-bs-toggle="dropdown" data-bs-offset="-20,20" aria-expanded="false" aria-label="<?php echo Text::_('COM_J2COMMERCE_ACTIONS'); ?>">
-                                              <span class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></span>
+                                        <div>
+                                        <div class="uk-inline" id="paymentDropdownContainer<?php echo (int) $method->id; ?>">
+                                           <button type="button" class="uk-button uk-button-small uk-button-default" aria-label="<?php echo Text::_('COM_J2COMMERCE_ACTIONS'); ?>">
+                                              <span uk-icon="icon: more-vertical" aria-hidden="true"></span>
                                            </button>
-                                           <span class="dropdown-menu" aria-labelledby="paymentDropdown<?php echo (int) $method->id; ?>">
+                                           <div uk-dropdown="mode: click; pos: bottom-right">
+                                              <ul class="uk-nav uk-dropdown-nav">
                                               <?php if ($method->canDelete()) : ?>
-                                                <a role="button" class="dropdown-item j2commerce-delete-card-btn" href="#" data-provider="<?php echo htmlspecialchars($method->provider, ENT_QUOTES, 'UTF-8'); ?>" data-method-id="<?php echo (int) $method->id; ?>">
-                                                    <span class="fa-solid fa-trash text-danger fa-fw" aria-hidden="true"></span>
-                                                    <span class="ms-1"><?php echo Text::_('JACTION_DELETE'); ?></span>
-                                                </a>
+                                                <li>
+                                                    <a role="button" class="j2commerce-delete-card-btn uk-text-danger" href="#" data-provider="<?php echo htmlspecialchars($method->provider, ENT_QUOTES, 'UTF-8'); ?>" data-method-id="<?php echo (int) $method->id; ?>">
+                                                        <span uk-icon="icon: trash" class="uk-margin-small-right" aria-hidden="true"></span>
+                                                        <?php echo Text::_('JACTION_DELETE'); ?>
+                                                    </a>
+                                                </li>
                                               <?php endif; ?>
                                                <?php if ($method->canSetDefault() && !$method->isDefault) : ?>
-                                                   <a role="button" class="dropdown-item j2commerce-set-default-btn" href="#" data-provider="<?php echo htmlspecialchars($method->provider, ENT_QUOTES, 'UTF-8'); ?>" data-method-id="<?php echo (int) $method->id; ?>">
-                                                       <span class="fa-solid fa-star fa-fw" aria-hidden="true"></span>
-                                                       <span class="ms-1"><?php echo Text::_('COM_J2COMMERCE_PAYMENT_METHODS_SET_DEFAULT'); ?></span>
-                                                  </a>
+                                                   <li>
+                                                       <a role="button" class="j2commerce-set-default-btn" href="#" data-provider="<?php echo htmlspecialchars($method->provider, ENT_QUOTES, 'UTF-8'); ?>" data-method-id="<?php echo (int) $method->id; ?>">
+                                                           <span uk-icon="icon: star" class="uk-margin-small-right" aria-hidden="true"></span>
+                                                           <?php echo Text::_('COM_J2COMMERCE_PAYMENT_METHODS_SET_DEFAULT'); ?>
+                                                      </a>
+                                                   </li>
                                                <?php endif; ?>
-                                           </span>
-                                        </span>
+                                              </ul>
+                                           </div>
+                                        </div>
                                         </div>
                                     </div>
                                 </div>
