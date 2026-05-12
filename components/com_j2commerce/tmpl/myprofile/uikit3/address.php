@@ -50,7 +50,7 @@ $type    = \in_array($rawType, ['billing', 'shipping'], true) ? $rawType : 'bill
                     </select>
                 </div>
 
-                <div class="uk-grid uk-grid-small" uk-grid>
+                <div class="row g-3">
                     <?php foreach ($fields as $field): ?>
                     <?php
                     $namekey = $field->field_namekey;
