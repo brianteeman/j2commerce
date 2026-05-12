@@ -55,7 +55,7 @@ $totals = ($this->order && method_exists($this->order, 'get_formatted_order_tota
 $grandTotalValue = $totals['grandtotal']['value'] ?? '';
 
 ?>
-<div class="uk-background-muted uk-border-rounded uk-padding uk-padding-small@m">
+<div class="uk-background-muted uk-border-rounded uk-padding">
 
             <?php if (!empty($this->items)): ?>
             <div class="checkout-sidebar-items uk-margin-bottom">
@@ -74,11 +74,11 @@ $grandTotalValue = $totals['grandtotal']['value'] ?? '';
                         ? $this->order->get_formatted_lineitem_total($item, $checkoutPriceDisplay)
                         : 0;
                     ?>
-                    <div class="checkout-sidebar-item uk-flex uk-flex-middle uk-margin-small-bottom" style="gap: 12px;">
+                    <div class="checkout-sidebar-item uk-flex uk-flex-middle" style="gap: 12px;">
                         <?php if (!empty($thumbImage)): ?>
-                        <div class="uk-position-relative uk-flex-none" style="width:64px;height:64px;">
+                        <div class="uk-position-relative uk-flex-none j2commerce-sidecart-thumb">
                             <img class="uk-border-rounded uk-border uk-width-1-1 uk-height-1-1" style="object-fit:cover;" src="<?php echo $this->escape($thumbImage); ?>" alt="<?php echo $this->escape($item->orderitem_name); ?>">
-                            <span class="uk-badge uk-position-top-right"><?php echo $qty; ?></span>
+                            <span class="uk-badge j2commerce-sidecart-qty-badge"><?php echo $qty; ?></span>
                         </div>
                         <?php else: ?>
                         <div class="uk-flex-none uk-flex uk-flex-middle uk-flex-center uk-border-rounded uk-border uk-background-default" style="width:64px;height:64px;">
@@ -120,6 +120,7 @@ $grandTotalValue = $totals['grandtotal']['value'] ?? '';
                     'formId'       => 'sidecart-coupon',
                     'variant'      => 'inline',
                     'showDiscount' => true,
+                    'framework'    => 'uikit3',
                 ], JPATH_ROOT . '/components/com_j2commerce/layouts'); ?>
             </div>
             <?php endif; ?>
@@ -131,15 +132,16 @@ $grandTotalValue = $totals['grandtotal']['value'] ?? '';
                     'formId'       => 'sidecart-voucher',
                     'variant'      => 'inline',
                     'showDiscount' => true,
+                    'framework'    => 'uikit3',
                 ], JPATH_ROOT . '/components/com_j2commerce/layouts'); ?>
             </div>
             <?php endif; ?>
 
             <?php if (!empty($totals)): ?>
-            <div class="uk-border-top uk-padding-small-top">
+            <div class="j2commerce-sidecart-totals">
                 <?php foreach ($totals as $key => $total): ?>
                     <?php if ($key === 'grandtotal'): ?>
-                        <div class="uk-flex uk-flex-between uk-flex-middle uk-padding-small-top uk-border-top uk-margin-small-top">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-top j2commerce-sidecart-grandtotal-row">
                             <span class="uk-text-large uk-text-bold"><?php echo $total['label']; ?></span>
                             <span class="uk-text-large uk-text-bold j2commerce-sidecart-grandtotal"><?php echo $total['value']; ?></span>
                         </div>

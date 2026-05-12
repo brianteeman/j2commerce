@@ -25,6 +25,7 @@ $token = Session::getFormToken();
 
 $wa  = Factory::getApplication()->getDocument()->getWebAssetManager();
 $wa->registerAndUseStyle('checkout.style', 'media/com_j2commerce/css/site/checkout.css', [], [], []);
+$wa->registerAndUseStyle('checkout.uikit3.style', 'media/com_j2commerce/css/site/checkout-uikit3.css', [], [], []);
 
 // Register telephone widget assets + script options on initial page render.
 // The billing/shipping forms (which actually render the telephone widget) are
@@ -149,9 +150,9 @@ $selectZoneJs = htmlspecialchars(Text::sprintf('COM_J2COMMERCE_SELECT_PLACEHOLDE
                 <div class="j2commerce-checkout-sidebar uk-width-1-3@l">
                     <?php echo J2CommerceHelper::modules()->loadposition('j2commerce-checkout-sidecart-top'); ?>
 
-                    <button class="uk-button uk-button-default uk-width-1-1 uk-hidden@l uk-flex uk-flex-between uk-flex-middle uk-margin-bottom"
+                    <button class="uk-button uk-button-default uk-width-1-1 uk-hidden@l uk-flex uk-flex-between uk-flex-middle uk-margin-bottom j2commerce-sidecart-toggle"
                             type="button"
-                            uk-toggle="target: #checkoutSidecartCollapse"
+                            uk-toggle="target: #checkoutSidecartCollapse; cls: uk-open"
                             aria-expanded="false"
                             aria-controls="checkoutSidecartCollapse">
                         <span class="uk-flex uk-flex-middle">
@@ -163,8 +164,8 @@ $selectZoneJs = htmlspecialchars(Text::sprintf('COM_J2COMMERCE_SELECT_PLACEHOLDE
                     </button>
 
                     <div class="j2commerce-checkout-sidecart">
-                        <div id="checkoutSidecartCollapse" hidden>
-                            <div id="checkout-sidecart-content">
+                        <div id="checkoutSidecartCollapse" class="j2commerce-sidecart-collapse">
+                            <div id="checkout-sidecart-content" uk-sticky="offset: 16; media: @l; end: .j2commerce-checkout-steps">
                                 <?php echo $this->loadTemplate('sidecart'); ?>
                             </div>
                         </div>

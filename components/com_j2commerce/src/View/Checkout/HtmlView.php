@@ -115,13 +115,13 @@ class HtmlView extends BaseHtmlView
         parent::display($tpl);
     }
 
-    /**
-     * Resolve and register the per-menu-item framework folder so loadTemplate()
-     * and parent::display() pick up the correct framework subfolder.
-     */
-    private function registerFrameworkTemplatePaths(\Joomla\CMS\Application\CMSApplicationInterface $app): void
-    {
-        $framework = (string) $this->params->get('framework', 'bootstrap5');
+    /** Register the bootstrap5/uikit3 subfolder; AJAX callers pass merged menu params as 2nd arg. */
+    public function registerFrameworkTemplatePaths(
+        \Joomla\CMS\Application\CMSApplicationInterface $app,
+        ?\Joomla\Registry\Registry $params = null
+    ): void {
+        $params ??= $this->params;
+        $framework = (string) ($params ? $params->get('framework', 'bootstrap5') : 'bootstrap5');
         $framework = preg_replace('/[^a-zA-Z0-9_-]/', '', $framework) ?? '';
 
         $viewName = $this->getName();
