@@ -1347,6 +1347,7 @@ class CheckoutController extends BaseController
             'showTerms'        => (int) J2CommerceHelper::config()->get('show_terms', 0),
             'termsDisplayType' => (string) J2CommerceHelper::config()->get('terms_display_type', 'link'),
             'termsArticleId'   => (int) J2CommerceHelper::config()->get('termsid', 0),
+            'termsText'        => (string) J2CommerceHelper::config()->get('termstext', ''),
         ]);
     }
 

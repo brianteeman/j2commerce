@@ -1303,6 +1303,14 @@
             addfieldprefix="Joomla\Component\Content\Administrator\Field"
             showon="show_terms:1"
         />
+        <field
+            name="termstext"
+            type="text"
+            label="COM_J2COMMERCE_CONFIG_TERMS_TEXT"
+            description="COM_J2COMMERCE_CONFIG_TERMS_TEXT_DESC"
+            filter="raw"
+            showon="show_terms:1"
+        />
     </fieldset>
 
 

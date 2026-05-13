@@ -28,41 +28,52 @@ $freeRedirect     = $this->free_redirect ?? '';
 $termsUrl         = $showTerms && $termsArticleId
     ? Route::_(RouteHelper::getArticleRoute($termsArticleId))
     : '';
+$termsText        = trim((string) ($this->termsText ?? ''));
 ?>
 <div class="j2commerce-checkout-confirm">
 
 <?php if (empty($errors)) : ?>
-    <div class="mb-3">
+    <div class="j2commerce-customer-note">
         <label for="customer_note" class="form-label"><?php echo Text::_('COM_J2COMMERCE_CHECKOUT_CUSTOMER_NOTE'); ?></label>
-        <textarea name="customer_note" id="customer_note" class="form-control" rows="3"></textarea>
+        <textarea name="customer_note" id="customer_note" class="form-control" rows="2"></textarea>
     </div>
 
     <?php echo J2CommerceHelper::plugin()->eventWithHtml('BeforeCheckoutConfirm', [$this]); ?>
 
     <?php if ($showTerms === 1 && $termsDisplayType === 'checkbox') : ?>
-        <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="tos_check" value="1" id="tos_check">
-            <label class="form-check-label" for="tos_check">
-                <?php if ($termsUrl !== '') : ?>
-                    <?php echo Text::sprintf(
-                        'COM_J2COMMERCE_CHECKOUT_AGREE_TERMS_LINK',
-                        '<a href="' . htmlspecialchars($termsUrl) . '" target="_blank" rel="noopener">'
-                            . htmlspecialchars(Text::_('COM_J2COMMERCE_CHECKOUT_TERMS_AND_CONDITIONS'))
-                            . '</a>'
-                    ); ?>
-                <?php else : ?>
-                    <?php echo Text::_('COM_J2COMMERCE_CHECKOUT_AGREE_TERMS'); ?>
-                <?php endif; ?>
-            </label>
+        <div class="j2commerce-terms-box mb-3">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="tos_check" value="1" id="tos_check">
+                <label class="form-check-label" for="tos_check">
+                    <?php if ($termsText !== '') : ?>
+                        <?php // Raw HTML — admin-controlled via filter="raw" ?>
+                        <?php echo $termsText; ?>
+                    <?php elseif ($termsUrl !== '') : ?>
+                        <?php echo Text::sprintf(
+                            'COM_J2COMMERCE_CHECKOUT_AGREE_TERMS_LINK',
+                            '<a href="' . htmlspecialchars($termsUrl) . '" target="_blank" rel="noopener">'
+                                . htmlspecialchars(Text::_('COM_J2COMMERCE_CHECKOUT_TERMS_AND_CONDITIONS'))
+                                . '</a>'
+                        ); ?>
+                    <?php else : ?>
+                        <?php echo Text::_('COM_J2COMMERCE_CHECKOUT_AGREE_TERMS'); ?>
+                    <?php endif; ?>
+                </label>
+            </div>
         </div>
-    <?php elseif ($showTerms === 1 && $termsDisplayType === 'link' && $termsUrl !== '') : ?>
+    <?php elseif ($showTerms === 1 && $termsDisplayType === 'link' && ($termsUrl !== '' || $termsText !== '')) : ?>
         <div class="j2commerce-terms-link mb-3">
-            <?php echo Text::sprintf(
-                'COM_J2COMMERCE_CHECKOUT_AGREE_TERMS_LINK',
-                '<a href="' . htmlspecialchars($termsUrl) . '" target="_blank" rel="noopener">'
-                    . htmlspecialchars(Text::_('COM_J2COMMERCE_CHECKOUT_TERMS_AND_CONDITIONS'))
-                    . '</a>'
-            ); ?>
+            <?php if ($termsText !== '') : ?>
+                <?php // Raw HTML — admin-controlled via filter="raw" ?>
+                <?php echo $termsText; ?>
+            <?php else : ?>
+                <?php echo Text::sprintf(
+                    'COM_J2COMMERCE_CHECKOUT_AGREE_TERMS_LINK',
+                    '<a href="' . htmlspecialchars($termsUrl) . '" target="_blank" rel="noopener">'
+                        . htmlspecialchars(Text::_('COM_J2COMMERCE_CHECKOUT_TERMS_AND_CONDITIONS'))
+                        . '</a>'
+                ); ?>
+            <?php endif; ?>
         </div>
     <?php endif; ?>
 
