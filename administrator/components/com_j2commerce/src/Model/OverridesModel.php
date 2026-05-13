@@ -187,32 +187,40 @@ class OverridesModel extends BaseDatabaseModel
 
     public function getOverrideFiles(): array
     {
-        $files = [];
-
-        $layoutPath = $this->getBaseTemplateOverridePath();
-        if (is_dir($layoutPath)) {
-            $files = array_merge($files, $this->buildDirectoryTree($layoutPath, $layoutPath));
-        }
-
-        $tmplPath = $this->getTmplBaseOverridePath();
-        if (is_dir($tmplPath)) {
-            $files = array_merge($files, $this->buildDirectoryTree($tmplPath, $tmplPath));
-        }
-
-        return $files;
+        return [
+            'layouts' => is_dir($this->getBaseTemplateOverridePath())
+                ? $this->buildDirectoryTree($this->getBaseTemplateOverridePath(), $this->getBaseTemplateOverridePath(), '', 'layouts')
+                : [],
+            'tmpl'    => is_dir($this->getTmplBaseOverridePath())
+                ? $this->buildDirectoryTree($this->getTmplBaseOverridePath(), $this->getTmplBaseOverridePath(), '', 'tmpl')
+                : [],
+        ];
     }
 
     public function getSourceByPath(string $encodedFile): ?\stdClass
     {
-        $relativePath = base64_decode($encodedFile);
-
-        // Try layout base first, then tmpl base
+        $decoded    = base64_decode($encodedFile);
         $layoutBase = $this->getBaseTemplateOverridePath();
         $tmplBase   = $this->getTmplBaseOverridePath();
-        $fullPath   = Path::clean($layoutBase . '/' . $relativePath);
 
-        if (!is_file($fullPath)) {
+        if (str_contains($decoded, '|')) {
+            [$base, $relativePath] = explode('|', $decoded, 2);
+        } else {
+            // Legacy format: no base prefix — try layouts first, then tmpl
+            $base         = 'auto';
+            $relativePath = $decoded;
+        }
+
+        if ($base === 'layouts') {
+            $fullPath = Path::clean($layoutBase . '/' . $relativePath);
+        } elseif ($base === 'tmpl') {
             $fullPath = Path::clean($tmplBase . '/' . $relativePath);
+        } else {
+            // auto: layouts first, then tmpl
+            $fullPath = Path::clean($layoutBase . '/' . $relativePath);
+            if (!is_file($fullPath)) {
+                $fullPath = Path::clean($tmplBase . '/' . $relativePath);
+            }
         }
 
         if (!is_file($fullPath)) {
@@ -224,22 +232,26 @@ class OverridesModel extends BaseDatabaseModel
             return null;
         }
 
+        // Determine file type from the resolved base
+        $fileType = ($base === 'tmpl' || ($base === 'auto' && strpos($cleanFull, Path::clean($tmplBase)) === 0))
+            ? 'tmpl'
+            : 'layouts';
+
         // Normalize to forward slashes (Windows Path::clean uses backslashes)
         $relativePath = str_replace('\\', '/', $relativePath);
-
-        // Extract plugin element from path (first folder after base path)
-        $pathParts     = explode('/', $relativePath);
+        $pathParts    = explode('/', $relativePath);
         $pluginElement = $pathParts[0] ?? '';
 
-        // Detect file type from path structure
-        $isTmpl     = isset($pathParts[1]) && $pathParts[1] === 'tmpl';
-        $fileType   = $isTmpl ? 'tmpl' : 'layouts';
-        $tmplFolder = ($isTmpl && isset($pathParts[2])) ? $pathParts[2] : '';
-
-        // Strip plugin element prefix so filename matches builder select values
-        // relativePath = "app_bootstrap5/list/category/item.php"
-        // filename should be "list/category/item.php" (without plugin element prefix)
-        $filenameWithoutPlugin = implode('/', \array_slice($pathParts, 1));
+        if ($fileType === 'tmpl') {
+            // Under tmpl base: first segment IS the folder (e.g. bootstrap5, tag_bootstrap5, categories_sub)
+            $tmplFolder            = $pluginElement;
+            $filenameWithoutPlugin = implode('/', \array_slice($pathParts, 1));
+        } else {
+            // Under layouts base: path is <pluginElement>/[tmpl/<folder>/]...
+            $isTmplSubdir          = isset($pathParts[1]) && $pathParts[1] === 'tmpl';
+            $tmplFolder            = ($isTmplSubdir && isset($pathParts[2])) ? $pathParts[2] : '';
+            $filenameWithoutPlugin = implode('/', \array_slice($pathParts, 1));
+        }
 
         $item                = new \stdClass();
         $item->pluginElement = $pluginElement;
@@ -252,7 +264,6 @@ class OverridesModel extends BaseDatabaseModel
         $item->source        = file_get_contents($fullPath);
         $item->label         = basename($relativePath);
 
-        // Try to find the core source file
         if (!empty($pluginElement) && \count($pathParts) > 1) {
             $subPath    = implode('/', \array_slice($pathParts, 1));
             $sourcePath = OverrideRegistry::getSourcePath($pluginElement, $subPath);
@@ -267,14 +278,26 @@ class OverridesModel extends BaseDatabaseModel
 
     public function saveSourceByPath(string $encodedFile, string $source): bool
     {
-        $relativePath = base64_decode($encodedFile);
-
+        $decoded    = base64_decode($encodedFile);
         $layoutBase = $this->getBaseTemplateOverridePath();
         $tmplBase   = $this->getTmplBaseOverridePath();
-        $fullPath   = Path::clean($layoutBase . '/' . $relativePath);
 
-        if (!is_file($fullPath)) {
+        if (str_contains($decoded, '|')) {
+            [$base, $relativePath] = explode('|', $decoded, 2);
+        } else {
+            $base         = 'auto';
+            $relativePath = $decoded;
+        }
+
+        if ($base === 'layouts') {
+            $fullPath = Path::clean($layoutBase . '/' . $relativePath);
+        } elseif ($base === 'tmpl') {
             $fullPath = Path::clean($tmplBase . '/' . $relativePath);
+        } else {
+            $fullPath = Path::clean($layoutBase . '/' . $relativePath);
+            if (!is_file($fullPath)) {
+                $fullPath = Path::clean($tmplBase . '/' . $relativePath);
+            }
         }
 
         if (!is_file($fullPath)) {
@@ -383,7 +406,7 @@ class OverridesModel extends BaseDatabaseModel
         return $db->loadResult() ?: 'cassiopeia';
     }
 
-    private function buildDirectoryTree(string $dir, string $basePath, string $relativeDirPath = ''): array
+    private function buildDirectoryTree(string $dir, string $basePath, string $relativeDirPath = '', string $base = ''): array
     {
         $result = [];
         $items  = scandir($dir);
@@ -397,7 +420,7 @@ class OverridesModel extends BaseDatabaseModel
             $itemRelativePath = $relativeDirPath !== '' ? $relativeDirPath . '/' . $item : $item;
 
             if (is_dir($fullPath)) {
-                $children = $this->buildDirectoryTree($fullPath, $basePath, $itemRelativePath);
+                $children = $this->buildDirectoryTree($fullPath, $basePath, $itemRelativePath, $base);
                 if (!empty($children)) {
                     $result[] = [
                         'type'     => 'folder',
@@ -408,10 +431,12 @@ class OverridesModel extends BaseDatabaseModel
                 }
             } elseif (pathinfo($item, PATHINFO_EXTENSION) === 'php') {
                 $relativePath = str_replace(Path::clean($basePath) . \DIRECTORY_SEPARATOR, '', Path::clean($fullPath));
+                $relativePath = str_replace('\\', '/', $relativePath);
+                $encodedId    = $base !== '' ? base64_encode($base . '|' . $relativePath) : base64_encode($relativePath);
                 $result[]     = [
                     'type' => 'file',
                     'name' => $item,
-                    'id'   => base64_encode($relativePath),
+                    'id'   => $encodedId,
                     'path' => $itemRelativePath,
                 ];
             }

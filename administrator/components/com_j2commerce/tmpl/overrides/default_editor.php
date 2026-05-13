@@ -24,20 +24,45 @@ $file = $this->source->fileId ?? '';
 
 <div class="row mt-2">
     <div id="treeholder" class="col-md-3 tree-holder">
-        <?php if (empty($this->overrideFiles)) : ?>
+        <?php
+        $layoutFiles = $this->overrideFiles['layouts'] ?? [];
+        $tmplFiles   = $this->overrideFiles['tmpl'] ?? [];
+        ?>
+        <?php if (empty($layoutFiles) && empty($tmplFiles)) : ?>
             <div class="p-3 text-body-secondary text-center small">
                 <?php echo Text::_('COM_J2COMMERCE_OVERRIDE_NO_FILES'); ?>
             </div>
         <?php else : ?>
             <div class="mt-2 mb-2">
                 <ul class="directory-tree treeselect">
-                    <li class="folder-select">
-                        <a class="folder-url" data-id="" href="">
-                            <span class="icon-folder icon-fw" aria-hidden="true"></span>
-                            <?php echo $this->escape($this->activeTemplate); ?>/html/layouts/com_j2commerce
-                        </a>
-                        <?php echo $this->loadTemplate('tree'); ?>
-                    </li>
+                    <?php if (!empty($layoutFiles)) : ?>
+                        <li class="folder-select">
+                            <a class="folder-url" data-id="" href="">
+                                <span class="icon-folder icon-fw" aria-hidden="true"></span>
+                                <?php echo $this->escape($this->activeTemplate); ?>/html/layouts/com_j2commerce
+                            </a>
+                            <?php
+                            $temp                    = $this->overrideFiles;
+                            $this->overrideFiles     = $layoutFiles;
+                            echo $this->loadTemplate('tree');
+                            $this->overrideFiles     = $temp;
+                            ?>
+                        </li>
+                    <?php endif; ?>
+                    <?php if (!empty($tmplFiles)) : ?>
+                        <li class="folder-select">
+                            <a class="folder-url" data-id="" href="">
+                                <span class="icon-folder icon-fw" aria-hidden="true"></span>
+                                <?php echo $this->escape($this->activeTemplate); ?>/html/com_j2commerce/templates
+                            </a>
+                            <?php
+                            $temp                = $this->overrideFiles;
+                            $this->overrideFiles = $tmplFiles;
+                            echo $this->loadTemplate('tree');
+                            $this->overrideFiles = $temp;
+                            ?>
+                        </li>
+                    <?php endif; ?>
                 </ul>
             </div>
         <?php endif; ?>
