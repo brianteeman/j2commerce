@@ -37,6 +37,11 @@
     box-sizing: border-box;
 }
 
+#j2commerce-checkout .j2commerce-save-card-container, #j2commerce-checkout .j2commerce-terms-box {
+    background: #f5f5f5;
+    padding: .5rem;
+}
+
 /* Sidecart collapse: hidden < lg, toggled via .uk-open, always shown >= 1200px. */
 .j2commerce-sidecart-collapse {
     display: none;
