@@ -29,19 +29,16 @@ $termsUrl         = $showTerms && $termsArticleId
     ? Route::_(RouteHelper::getArticleRoute($termsArticleId))
     : '';
 $termsText        = trim((string) ($this->termsText ?? ''));
+$showCustomerNote = (bool) ($this->showCustomerNote ?? true);
 ?>
 <div class="j2commerce-checkout-confirm">
 
 <?php if (empty($errors)) : ?>
-    <div class="uk-margin-bottom">
-        <label for="customer_note" class="uk-form-label"><?php echo Text::_('COM_J2COMMERCE_CHECKOUT_CUSTOMER_NOTE'); ?></label>
-        <textarea name="customer_note" id="customer_note" class="uk-textarea" rows="3"></textarea>
-    </div>
 
     <?php echo J2CommerceHelper::plugin()->eventWithHtml('BeforeCheckoutConfirm', [$this]); ?>
 
     <?php if ($showTerms === 1 && $termsDisplayType === 'checkbox') : ?>
-        <div class="uk-margin-bottom">
+        <div class="j2commerce-terms-box uk-margin-bottom">
             <label class="uk-flex uk-flex-middle">
                 <input class="uk-checkbox uk-margin-small-right" type="checkbox" name="tos_check" value="1" id="tos_check">
                 <span>
@@ -74,6 +71,13 @@ $termsText        = trim((string) ($this->termsText ?? ''));
                         . '</a>'
                 ); ?>
             <?php endif; ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($showCustomerNote) : ?>
+        <div class="j2commerce-customer-note uk-margin-bottom">
+            <label for="customer_note" class="uk-form-label"><?php echo Text::_('COM_J2COMMERCE_CHECKOUT_CUSTOMER_NOTE'); ?></label>
+            <textarea name="customer_note" id="customer_note" class="uk-textarea" rows="3"></textarea>
         </div>
     <?php endif; ?>
 
