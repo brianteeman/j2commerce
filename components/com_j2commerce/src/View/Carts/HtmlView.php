@@ -372,13 +372,16 @@ class HtmlView extends BaseHtmlView
      * Resolve and register the per-menu-item framework folder so loadTemplate()
      * and parent::display() pick up the correct framework subfolder.
      *
+     * Public so AJAX controllers that bypass display() (e.g. getTotalsAjax)
+     * can still register the framework path before calling loadTemplate().
+     *
      * Priority order produced (highest first):
      *   1. templates/<tpl>/html/com_j2commerce/{view}/{framework}/
      *   2. templates/<tpl>/html/com_j2commerce/{view}/          (legacy flat overrides)
      *   3. components/com_j2commerce/tmpl/{view}/{framework}/
      *   4. components/com_j2commerce/tmpl/{view}/               (default search path)
      */
-    private function registerFrameworkTemplatePaths(\Joomla\CMS\Application\CMSApplicationInterface $app): void
+    public function registerFrameworkTemplatePaths(\Joomla\CMS\Application\CMSApplicationInterface $app): void
     {
         $framework = (string) $this->params->get('framework', 'bootstrap5');
         $framework = preg_replace('/[^a-zA-Z0-9_-]/', '', $framework) ?? '';
