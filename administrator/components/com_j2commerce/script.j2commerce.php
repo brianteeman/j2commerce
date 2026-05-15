@@ -131,6 +131,9 @@ class Com_J2commerceInstallerScript extends InstallerScript
     {
         $this->debugLog("=== UPDATE START ===");
 
+        $this->installLocalisation($parent);
+        $this->debugLog("UPDATE: localisation seeded (idempotent)");
+
         $this->setDefaultAcl();
         $this->debugLog("UPDATE: default ACL rules set (if empty)");
 
