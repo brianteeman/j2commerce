@@ -15,6 +15,7 @@ namespace J2Commerce\Component\J2commerce\Site\Controller;
 \defined('_JEXEC') or die;
 
 use J2Commerce\Component\J2commerce\Administrator\Controller\ProductsController as AdminProductsController;
+use J2Commerce\Component\J2commerce\Administrator\Helper\J2CommerceHelper;
 use J2Commerce\Component\J2commerce\Site\Service\ProductLayoutService;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
@@ -176,6 +177,12 @@ class ProductsController extends AdminProductsController
                 $model = $this->getModel('Products', 'Site');
                 $model->getState();
             }
+
+            // Seed model state with menu/app params — HtmlView::display() does
+            // this normally, but this AJAX endpoint bypasses the view chain.
+            // Without it, ProductsModel::getFilters() fatals on null $params.
+            $model->setState('params', $params);
+
             $model->setState('list.start', $limitstart);
 
             $pageLimit = (int) $params->get('page_limit', 0);
@@ -293,6 +300,18 @@ class ProductsController extends AdminProductsController
         $itemId   = $app->getInput()->getInt('Itemid', 0);
         $columns  = (int) $params->get('list_no_of_columns', 3);
         $colClass = 'col-md-' . (int) round(12 / $columns);
+
+        // Let subtemplate plugins render the grid in their own framework
+        // (uk-grid for UIkit, etc.). Fall back to Bootstrap markup below
+        // when no plugin claims the event.
+        $pluginHtml = J2CommerceHelper::plugin()->eventWithHtml(
+            'RenderAjaxProductListGrid',
+            [$items, $params, $itemId]
+        )->getArgument('html', '');
+
+        if ($pluginHtml !== '') {
+            return $pluginHtml;
+        }
 
         ob_start();
 
