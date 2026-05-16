@@ -16,6 +16,7 @@ namespace J2Commerce\Component\J2commerce\Site\Controller;
 
 use J2Commerce\Component\J2commerce\Administrator\Controller\ProductsController as AdminProductsController;
 use J2Commerce\Component\J2commerce\Administrator\Helper\J2CommerceHelper;
+use J2Commerce\Component\J2commerce\Site\Helper\ProductFilterRequestHelper;
 use J2Commerce\Component\J2commerce\Site\Service\ProductLayoutService;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
@@ -87,42 +88,18 @@ class ProductsController extends AdminProductsController
         try {
             $session = $app->getSession();
 
-            $manufacturerIds = $input->get('manufacturer_ids', [], 'array');
-            if (empty($manufacturerIds)) {
-                $brandsParam = $input->getString('brands', '');
-                if (!empty($brandsParam)) {
-                    $manufacturerIds = array_filter(explode(',', $brandsParam), 'is_numeric');
-                }
-            }
+            // Single source of truth for filter parsing — same helper used by ProductsModel::populateState().
+            $filterState      = ProductFilterRequestHelper::resolveFromRequest($input);
+            $manufacturerIds  = $filterState['manufacturer_ids'];
+            $vendorIds        = $filterState['vendor_ids'];
+            $productfilterIds = $filterState['productfilter_ids'];
+            $tagIds           = $filterState['tag_ids'];
+            $tagMatch         = $filterState['tag_match'];
+            $priceFrom        = $filterState['price_from'];
+            $priceTo          = $filterState['price_to'];
 
-            $vendorIds = $input->get('vendor_ids', [], 'array');
-            if (empty($vendorIds)) {
-                $vendorsParam = $input->getString('vendors', '');
-                if (!empty($vendorsParam)) {
-                    $vendorIds = array_filter(explode(',', $vendorsParam), 'is_numeric');
-                }
-            }
-
-            $productfilterIds = $input->get('productfilter_ids', [], 'array');
-            if (empty($productfilterIds)) {
-                $filtersParam = $input->getString('filters', '');
-                if (!empty($filtersParam)) {
-                    $filterValues   = explode(',', $filtersParam);
-                    $numericFilters = array_filter($filterValues, 'is_numeric');
-                    if (\count($numericFilters) === \count($filterValues)) {
-                        $productfilterIds = $numericFilters;
-                    } else {
-                        $productfilterIds = $this->resolveFilterAliasesToIds($filterValues);
-                    }
-                }
-            }
-
-            $catid     = $input->getInt('filter_catid', 0);
-            $tagIds    = $input->get('tag_ids', [], 'array');
-            $tagMatch  = $input->getString('tag_match', 'any');
-            $priceFrom = $input->getFloat('pricefrom', 0);
-            $priceTo   = $input->getFloat('priceto', 0);
-            $search    = $input->getString('search', '');
+            $catid  = $input->getInt('filter_catid', 0);
+            $search = $input->getString('search', '');
 
             $sortby = $input->getString('sortby', '');
             if (empty($sortby)) {
@@ -197,19 +174,8 @@ class ProductsController extends AdminProductsController
                 $model->setState('list.limit', $pageLimit);
             }
 
-            if (!empty($manufacturerIds)) {
-                $model->setState('filter.manufacturer_ids', array_map('intval', $manufacturerIds));
-            }
-            if (!empty($vendorIds)) {
-                $model->setState('filter.vendor_ids', array_map('intval', $vendorIds));
-            }
-            if (!empty($productfilterIds)) {
-                $model->setState('filter.productfilter_ids', array_map('intval', $productfilterIds));
-            }
-            if ($priceFrom > 0 || $priceTo > 0) {
-                $model->setState('filter.price_from', $priceFrom);
-                $model->setState('filter.price_to', $priceTo);
-            }
+            // filter.manufacturer_ids / vendor_ids / productfilter_ids / price_from / price_to
+            // are seeded by ProductsModel::populateState() via ProductFilterRequestHelper.
             if (!empty($search)) {
                 $model->setState('filter.search', $search);
             }
@@ -396,67 +362,4 @@ class ProductsController extends AdminProductsController
         $app->close();
     }
 
-    /**
-     * Convert SEF-friendly filter aliases to IDs.
-     *
-     * Accepts bare aliases ("black") or composite tokens ("color:black") where the
-     * prefix is the URL-safe group name.  Composite tokens allow the same filter name
-     * to appear in multiple groups without collision.
-     */
-    protected function resolveFilterAliasesToIds(array $aliases): array
-    {
-        if (empty($aliases)) {
-            return [];
-        }
-
-        $db    = Factory::getContainer()->get(DatabaseInterface::class);
-        $query = $db->getQuery(true);
-
-        $query->select($db->quoteName(['f.j2commerce_filter_id', 'f.filter_name', 'g.group_name']))
-            ->from($db->quoteName('#__j2commerce_filters', 'f'))
-            ->join('LEFT', $db->quoteName('#__j2commerce_filtergroups', 'g') . ' ON ' . $db->quoteName('g.j2commerce_filtergroup_id') . ' = ' . $db->quoteName('f.group_id'));
-
-        $db->setQuery($query);
-        $filters = $db->loadObjectList();
-
-        $filterIds = [];
-
-        foreach ($aliases as $token) {
-            $token = trim($token);
-
-            if (is_numeric($token)) {
-                $filterIds[] = (int) $token;
-                continue;
-            }
-
-            // Composite token: "groupAlias:filterAlias"
-            if (str_contains($token, ':')) {
-                [$groupAliasToken, $filterAliasToken] = explode(':', $token, 2);
-
-                foreach ($filters as $filter) {
-                    $groupAlias  = \Joomla\CMS\Filter\OutputFilter::stringURLSafe($filter->group_name ?? '');
-                    $filterAlias = \Joomla\CMS\Filter\OutputFilter::stringURLSafe($filter->filter_name ?? '');
-
-                    if ($groupAlias === $groupAliasToken && $filterAlias === $filterAliasToken) {
-                        $filterIds[] = (int) $filter->j2commerce_filter_id;
-                        break;
-                    }
-                }
-
-                continue;
-            }
-
-            // Bare alias — match on filter name alone (backward compat)
-            foreach ($filters as $filter) {
-                $filterAlias = \Joomla\CMS\Filter\OutputFilter::stringURLSafe($filter->filter_name ?? '');
-
-                if ($filterAlias === $token) {
-                    $filterIds[] = (int) $filter->j2commerce_filter_id;
-                    break;
-                }
-            }
-        }
-
-        return array_unique($filterIds);
-    }
 }
