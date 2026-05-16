@@ -17,7 +17,10 @@ namespace J2Commerce\Component\J2commerce\Administrator\Model;
 use J2Commerce\Component\J2commerce\Administrator\Helper\CartHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\J2CommerceHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\ProductHelper;
+use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
+use Joomla\CMS\Filter\InputFilter;
+use Joomla\CMS\Helper\MediaHelper;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\MVC\Model\BaseDatabaseModel;
 use Joomla\CMS\Object\CMSObject;
@@ -25,6 +28,7 @@ use Joomla\CMS\Router\Route;
 use Joomla\CMS\Table\Table;
 use Joomla\Database\DatabaseInterface;
 use Joomla\Database\ParameterType;
+use Joomla\Filesystem\File;
 use Joomla\Registry\Registry;
 
 /**
@@ -653,6 +657,89 @@ class CartModel extends BaseDatabaseModel
     }
 
     /**
+     * Replicates MediaHelper::canUpload's filename/extension/MIME/size/PHP-tag checks
+     * inline so guests can upload product-option files when the Allow Guest Uploads
+     * config flag is enabled, without flipping Joomla's global media restrictions.
+     * Skips ONLY the user-group gate; every other security check is preserved.
+     *
+     * @param   array  $file  File array from $_FILES.
+     *
+     * @return  string|null  Error message, or null when the file is acceptable.
+     *
+     * @since   6.0.0
+     */
+    protected function validateGuestUpload(array $file): ?string
+    {
+        if (empty($file['name'])) {
+            return Text::_('JLIB_MEDIA_ERROR_UPLOAD_INPUT');
+        }
+
+        if ($file['name'] !== File::makeSafe($file['name'])) {
+            return Text::_('JLIB_MEDIA_ERROR_WARNFILENAME');
+        }
+
+        $parts = explode('.', $file['name']);
+
+        if (\count($parts) < 2) {
+            return Text::_('JLIB_MEDIA_ERROR_WARNFILETYPE');
+        }
+
+        array_shift($parts);
+        $parts = array_map('strtolower', $parts);
+
+        $executables = array_merge(MediaHelper::EXECUTABLES, InputFilter::FORBIDDEN_FILE_EXTENSIONS);
+
+        if (array_intersect($parts, $executables)) {
+            return Text::_('JLIB_MEDIA_ERROR_WARNFILETYPE');
+        }
+
+        $filetype    = array_pop($parts);
+        $mediaParams = ComponentHelper::getParams('com_media');
+        $allowable   = array_map('trim', explode(',', (string) $mediaParams->get('restrict_uploads_extensions', 'bmp,gif,jpg,jpeg,png,webp,avif,ico,mp3,m4a,mp4a,ogg,mp4,mp4v,mpeg,mov,odg,odp,ods,odt,pdf,png,ppt,txt,xcf,xls,csv')));
+
+        if ($filetype === '' || !\in_array($filetype, $allowable, true)) {
+            return Text::_('JLIB_MEDIA_ERROR_WARNFILETYPE');
+        }
+
+        $maxSize = (int) $mediaParams->get('upload_maxsize', 0) * 1024 * 1024;
+
+        if ($maxSize > 0 && (int) ($file['size'] ?? 0) > $maxSize) {
+            return Text::_('JLIB_MEDIA_ERROR_WARNFILETOOLARGE');
+        }
+
+        if (empty($file['tmp_name'])) {
+            return Text::_('JLIB_MEDIA_ERROR_WARNFILETOOLARGE');
+        }
+
+        $mime = MediaHelper::getMimeType($file['tmp_name'], MediaHelper::isImage($file['tmp_name']));
+
+        if ($mime === false) {
+            return Text::_('JLIB_MEDIA_ERROR_WARNINVALID_MIME');
+        }
+
+        if ((int) $mediaParams->get('check_mime', 1) === 1) {
+            $allowedMime = $mediaParams->get(
+                'upload_mime',
+                'image/jpeg,image/gif,image/png,image/bmp,image/webp,image/avif,application/msword,'
+                    . 'application/excel,application/pdf,application/powerpoint,text/plain,application/x-zip'
+            );
+            $allowedMime = array_map('trim', explode(',', str_replace('\\', '', (string) $allowedMime)));
+
+            if (!\in_array($mime, $allowedMime, true)) {
+                return Text::sprintf('JLIB_MEDIA_ERROR_WARNINVALID_MIMETYPE', $mime);
+            }
+        }
+
+        $content = file_get_contents($file['tmp_name']);
+
+        if ($content !== false && preg_match('/\<\?php/i', $content)) {
+            return Text::_('COM_J2COMMERCE_UPLOAD_FILE_PHP_TAGS');
+        }
+
+        return null;
+    }
+
+    /**
      * Upload file with validation.
      *
      * @param   array  $file         File array from $_FILES.
@@ -670,33 +757,46 @@ class CartModel extends BaseDatabaseModel
         }
 
         if ($checkUpload) {
-            $mediaHelper = new \Joomla\CMS\Helper\MediaHelper();
+            $app             = Factory::getApplication();
+            $isGuest         = $app->getIdentity()?->guest ?? true;
+            $j2cParams       = ComponentHelper::getParams('com_j2commerce');
+            $allowGuestBypass = $isGuest && (int) $j2cParams->get('allow_guest_uploads', 0) === 1;
 
-            if (!$mediaHelper->canUpload($file)) {
-                $app    = Factory::getApplication();
-                $errors = $app->getMessageQueue();
+            if ($allowGuestBypass) {
+                $err = $this->validateGuestUpload($file);
 
-                if (\count($errors)) {
-                    $error = array_pop($errors);
-                    $err   = $error['message'];
-                } else {
-                    $err = '';
-                }
-
-                // Check for PHP tags
-                $content = file_get_contents($file['tmp_name']);
-
-                if (preg_match('/\<\?php/i', $content)) {
-                    $err = Text::_('COM_J2COMMERCE_UPLOAD_FILE_PHP_TAGS');
-                }
-
-                if (!empty($err)) {
+                if ($err !== null) {
                     $this->setError(Text::_('COM_J2COMMERCE_UPLOAD_ERR_MEDIAHELPER_ERROR') . ' ' . $err);
-                } else {
-                    $this->setError(Text::_('COM_J2COMMERCE_UPLOAD_ERR_GENERIC_ERROR'));
+                    return false;
                 }
+            } else {
+                $mediaHelper = new MediaHelper();
 
-                return false;
+                if (!$mediaHelper->canUpload($file)) {
+                    $errors = $app->getMessageQueue();
+
+                    if (\count($errors)) {
+                        $error = array_pop($errors);
+                        $err   = $error['message'];
+                    } else {
+                        $err = '';
+                    }
+
+                    // Check for PHP tags
+                    $content = file_get_contents($file['tmp_name']);
+
+                    if (preg_match('/\<\?php/i', $content)) {
+                        $err = Text::_('COM_J2COMMERCE_UPLOAD_FILE_PHP_TAGS');
+                    }
+
+                    if (!empty($err)) {
+                        $this->setError(Text::_('COM_J2COMMERCE_UPLOAD_ERR_MEDIAHELPER_ERROR') . ' ' . $err);
+                    } else {
+                        $this->setError(Text::_('COM_J2COMMERCE_UPLOAD_ERR_GENERIC_ERROR'));
+                    }
+
+                    return false;
+                }
             }
         }
 
