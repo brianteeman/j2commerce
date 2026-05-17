@@ -127,6 +127,6 @@ class HtmlView extends BaseHtmlView
 
         $toolbar->cancel('length.cancel', $isNew ? 'JTOOLBAR_CANCEL' : 'JTOOLBAR_CLOSE');
         $toolbar->divider();
-        ToolbarHelper::help('Lengths', true, 'https://docs.j2commerce.com/v6/localisation/lengths');
+        ToolbarHelper::help(Text::_('COM_J2COMMERCE_LENGTHS'), true, 'https://docs.j2commerce.com/v6/localization/lengths/');
     }
 }

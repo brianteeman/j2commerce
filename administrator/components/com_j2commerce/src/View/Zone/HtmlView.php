@@ -129,6 +129,6 @@ class HtmlView extends BaseHtmlView
 
         $toolbar->cancel('zone.cancel', $isNew ? 'JTOOLBAR_CANCEL' : 'JTOOLBAR_CLOSE');
         $toolbar->divider();
-        ToolbarHelper::help('Zones', true, 'https://docs.j2commerce.com/v6/localisation/zones');
+        ToolbarHelper::help(Text::_('COM_J2COMMERCE_ZONES'), true, 'https://docs.j2commerce.com/v6/localization/zones/');
     }
 }

@@ -134,6 +134,6 @@ class HtmlView extends BaseHtmlView
 
         $toolbar->cancel('customfield.cancel', $isNew ? 'JTOOLBAR_CANCEL' : 'JTOOLBAR_CLOSE');
         $toolbar->divider();
-        ToolbarHelper::help('Custom_Fields', true, 'https://docs.j2commerce.com/v6/configuration/custom-fields');
+        ToolbarHelper::help(Text::_('COM_J2COMMERCE_CUSTOM_FIELDS'), true, 'https://docs.j2commerce.com/v6/setup/custom-fields/');
     }
 }

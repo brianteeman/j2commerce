@@ -136,6 +136,6 @@ class HtmlView extends BaseHtmlView
 
         $toolbar->cancel('orderstatus.cancel', $isNew ? 'JTOOLBAR_CANCEL' : 'JTOOLBAR_CLOSE');
         $toolbar->divider();
-        ToolbarHelper::help('Order Statuses', true, 'https://docs.j2commerce.com/v6/localisation/order-statuses');
+        ToolbarHelper::help(Text::_('COM_J2COMMERCE_ORDER_STATUSES'), true, 'https://docs.j2commerce.com/v6/setup/order-statuses/');
     }
 }

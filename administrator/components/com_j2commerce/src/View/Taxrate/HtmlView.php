@@ -127,6 +127,6 @@ class HtmlView extends BaseHtmlView
 
         $toolbar->cancel('taxrate.cancel', $isNew ? 'JTOOLBAR_CANCEL' : 'JTOOLBAR_CLOSE');
         $toolbar->divider();
-        ToolbarHelper::help('Tax_Rates', true, 'https://docs.j2commerce.com/v6/localisation/tax-rates');
+        ToolbarHelper::help(Text::_('COM_J2COMMERCE_TAX_RATES'), true, 'https://docs.j2commerce.com/v6/localization/tax-rates/');
     }
 }

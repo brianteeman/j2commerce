@@ -137,6 +137,6 @@ class HtmlView extends BaseHtmlView
             ToolbarHelper::cancel('option.cancel', 'JTOOLBAR_CLOSE');
         }
 
-        ToolbarHelper::help('Option', false, 'https://docs.j2commerce.com/v6/catalog/options');
+        ToolbarHelper::help(Text::_('COM_J2COMMERCE_OPTION'), false, 'https://docs.j2commerce.com/v6/catalog/creating-options/');
     }
 }

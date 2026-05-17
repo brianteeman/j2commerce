@@ -202,6 +202,6 @@ class HtmlView extends BaseHtmlView
 
         $toolbar->cancel('customer.cancel', $isNew ? 'JTOOLBAR_CANCEL' : 'JTOOLBAR_CLOSE');
 
-        ToolbarHelper::help('Customers', true, 'https://docs.j2commerce.com/v6/sales/customers');
+        ToolbarHelper::help(Text::_('COM_J2COMMERCE_CUSTOMERS'), true, 'https://docs.j2commerce.com/v6/sales/customers');
     }
 }

@@ -127,6 +127,6 @@ class HtmlView extends BaseHtmlView
 
         $toolbar->cancel('taxprofile.cancel', $isNew ? 'JTOOLBAR_CANCEL' : 'JTOOLBAR_CLOSE');
         $toolbar->divider();
-        ToolbarHelper::help('Tax_Profiles', true, 'https://docs.j2commerce.com/v6/localisation/tax-profiles');
+        ToolbarHelper::help(Text::_('COM_J2COMMERCE_TAX_PROFILES'), true, 'https://docs.j2commerce.com/v6/localization/tax-profiles/');
     }
 }
