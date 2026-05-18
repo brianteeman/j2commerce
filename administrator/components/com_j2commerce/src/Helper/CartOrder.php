@@ -1548,6 +1548,14 @@ class CartOrder
         // Save order fees (surcharges with names)
         $this->saveOrderFees($db, $orderId);
 
+        // Move customer-uploaded files from tmp/ to orders/{order_id}/
+        // Lookup is by mangled_name JOIN against orderitemattributes — cart_id alone is unreliable
+        // because product-option uploads happen before a cart exists (getCartId() returns 0).
+        OrderUploadHelper::attachUploadsToOrder(
+            $this->j2commerce_order_id,
+            $this->order_id
+        );
+
         // Create download records for downloadable items (access not yet granted)
         DownloadHelper::createOrderDownloads($orderId, $userId, $userEmail);
 
