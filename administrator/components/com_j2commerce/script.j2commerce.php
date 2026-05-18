@@ -121,6 +121,9 @@ class Com_J2commerceInstallerScript extends InstallerScript
         $this->setDefaultAcl();
         $this->debugLog("INSTALL: default ACL rules set");
 
+        $this->ensureFilesFolder();
+        $this->debugLog("INSTALL: files/com_j2commerce/ tree ensured");
+
         Factory::getApplication()->enqueueMessage(Text::_('COM_J2COMMERCE_INSTALL_SUCCESS'), 'success');
 
         $this->debugLog("=== INSTALL END ===");
@@ -136,6 +139,9 @@ class Com_J2commerceInstallerScript extends InstallerScript
 
         $this->setDefaultAcl();
         $this->debugLog("UPDATE: default ACL rules set (if empty)");
+
+        $this->ensureFilesFolder();
+        $this->debugLog("UPDATE: files/com_j2commerce/ tree ensured");
 
         $this->cleanupStaleCheckoutTemplates();
 
@@ -489,5 +495,99 @@ class Com_J2commerceInstallerScript extends InstallerScript
             }
         }
         $this->debugLog("SQL FILE: {$executed} executed, {$skipped} skipped");
+    }
+
+    // ── Customer-upload storage tree (Issue #1056) ─────────────────────────────
+
+    /**
+     * Create the files/com_j2commerce/ storage tree with .htaccess protection.
+     * Idempotent — re-runs safely on every install + update.
+     *
+     * @since  6.3.0
+     */
+    private function ensureFilesFolder(): void
+    {
+        $configuredPath = $this->readAttachmentFolderPath();
+        $root           = JPATH_ROOT . '/' . trim($configuredPath, '/');
+
+        foreach (['', '/tmp', '/orders'] as $sub) {
+            $dir = $root . $sub;
+
+            if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+                $this->debugLog("ENSURE FILES FOLDER: failed to create {$dir}");
+                continue;
+            }
+
+            $this->writeFileIfMissing($dir . '/index.html', '<!DOCTYPE html><title></title>');
+        }
+
+        $htaccess = <<<'HTACCESS'
+# J2Commerce file storage — never web-served directly.
+Require all denied
+
+<FilesMatch "\.(php|phtml|phar|pl|py|jsp|asp|aspx|sh|cgi|exe|bat)$">
+    Require all denied
+</FilesMatch>
+
+Options -ExecCGI -Indexes
+HTACCESS;
+
+        $this->writeFileIfMissing($root . '/.htaccess', $htaccess);
+
+        $readme = <<<'README'
+# J2Commerce Customer Upload Storage
+
+This directory holds customer-supplied files attached to orders (product-option uploads and checkout uploads).
+
+- `tmp/{cart_id}/` — uploads bound to in-progress carts; cleaned by the `j2commerce.cleanupOrderUploads` scheduled task once `expires_on` passes.
+- `orders/{order_id}/` — uploads attached to a placed order; cleaned by the same task per configured retention.
+
+Direct web access is denied via `.htaccess`. Downloads must go through `OrderfileController` (admin-only, CSRF + ACL gated).
+
+## Nginx equivalent
+
+If your site is served by Nginx instead of Apache, add this to your server block:
+
+```nginx
+location ~ ^/files/com_j2commerce { deny all; return 403; }
+```
+
+Do not store anything in this tree manually — admin order views look up files by `#__j2commerce_uploads` row, not by filesystem scan.
+README;
+
+        $this->writeFileIfMissing($root . '/README.md', $readme);
+
+        $this->debugLog("ENSURE FILES FOLDER: tree at {$root} ready");
+    }
+
+    /** Read attachmentfolderpath from com_j2commerce params with safe fallback. */
+    private function readAttachmentFolderPath(): string
+    {
+        $default = 'files/com_j2commerce';
+        $db      = Factory::getContainer()->get(DatabaseInterface::class);
+
+        $query = $db->getQuery(true)
+            ->select($db->quoteName('params'))
+            ->from($db->quoteName('#__extensions'))
+            ->where($db->quoteName('element') . ' = ' . $db->quote('com_j2commerce'))
+            ->where($db->quoteName('type') . ' = ' . $db->quote('component'));
+        $db->setQuery($query);
+
+        $params = (string) ($db->loadResult() ?: '');
+        $value  = trim((string) (new Registry($params))->get('attachmentfolderpath', ''));
+
+        return $value !== '' ? $value : $default;
+    }
+
+    /** Write file only if it doesn't already exist. Logs and continues on failure. */
+    private function writeFileIfMissing(string $path, string $contents): void
+    {
+        if (file_exists($path)) {
+            return;
+        }
+
+        if (@file_put_contents($path, $contents) === false) {
+            $this->debugLog("ENSURE FILES FOLDER: failed to write {$path}");
+        }
     }
 }

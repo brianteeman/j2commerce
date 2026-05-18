@@ -187,6 +187,7 @@
             type="text"
             label="COM_J2COMMERCE_CONFIG_ATTACHMENT_PATH"
             description="COM_J2COMMERCE_CONFIG_ATTACHMENT_PATH_DESC"
+            default="files/com_j2commerce"
             class="w-100"
         />
 
