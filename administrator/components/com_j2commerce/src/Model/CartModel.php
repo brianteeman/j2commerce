@@ -15,8 +15,10 @@ namespace J2Commerce\Component\J2commerce\Administrator\Model;
 \defined('_JEXEC') or die;
 
 use J2Commerce\Component\J2commerce\Administrator\Helper\CartHelper;
+use J2Commerce\Component\J2commerce\Administrator\Helper\ConfigHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\J2CommerceHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\ProductHelper;
+use J2Commerce\Component\J2commerce\Administrator\Helper\UploadHelper;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Filter\InputFilter;
@@ -615,33 +617,18 @@ class CartModel extends BaseDatabaseModel
             J2CommerceHelper::plugin()->event('AfterValidateFiles', [&$json, &$uploadResult]);
 
             if (empty($json)) {
-                $db   = $this->db;
-                $now  = Factory::getDate()->toSql();
-                $user = Factory::getApplication()->getIdentity();
+                $user   = Factory::getApplication()->getIdentity();
+                $stored = UploadHelper::createPendingUpload(
+                    $this->getCartId(),
+                    (string) $uploadResult['original_name'],
+                    (string) $uploadResult['mangled_name'],
+                    (string) $uploadResult['saved_name'],
+                    (string) $uploadResult['mime_type'],
+                    (int) ($uploadResult['file_size'] ?? 0),
+                    (int) ($user->id ?? 0)
+                );
 
-                // Insert upload record
-                $query = $db->getQuery(true)
-                    ->insert($db->quoteName('#__j2commerce_uploads'))
-                    ->columns($db->quoteName([
-                        'original_name',
-                        'mangled_name',
-                        'saved_name',
-                        'mime_type',
-                        'created_by',
-                        'created_on',
-                    ]))
-                    ->values(':origName, :mangledName, :savedName, :mime, :createdBy, :createdOn')
-                    ->bind(':origName', $uploadResult['original_name'])
-                    ->bind(':mangledName', $uploadResult['mangled_name'])
-                    ->bind(':savedName', $uploadResult['saved_name'])
-                    ->bind(':mime', $uploadResult['mime_type'])
-                    ->bind(':createdBy', $user->id, ParameterType::INTEGER)
-                    ->bind(':createdOn', $now);
-
-                try {
-                    $db->setQuery($query);
-                    $db->execute();
-                } catch (\Exception $e) {
+                if (!$stored) {
                     $json['error'] = Text::sprintf('COM_J2COMMERCE_UPLOAD_ERR_GENERIC_ERROR');
                 }
             }
@@ -806,39 +793,26 @@ class CartModel extends BaseDatabaseModel
             }
         }
 
-        // Generate mangled name
-        $serverkey = Factory::getApplication()->get('secret', '');
-        $sig       = $file['name'] . microtime() . $serverkey;
+        $attachmentRoot = ConfigHelper::getAttachmentAbsolutePath();
 
-        if (\function_exists('sha256')) {
-            $mangledname = hash('sha256', $sig);
-        } elseif (\function_exists('sha1')) {
-            $mangledname = sha1($sig);
-        } else {
-            $mangledname = md5($sig);
-        }
-
-        // Ensure upload folder exists
-        $uploadFolder = JPATH_ROOT . '/media/com_j2commerce/uploads';
-
-        if (!is_dir($uploadFolder)) {
-            if (!mkdir($uploadFolder, 0755, true)) {
-                $this->setError(Text::_('COM_J2COMMERCE_UPLOAD_ERROR_FOLDER_PERMISSION_ERROR'));
-                return false;
-            }
-        }
-
-        // Sanitize filename
-        $filename = basename(preg_replace('/[^a-zA-Z0-9\.\-\s+]/', '', html_entity_decode($file['name'], ENT_QUOTES, 'UTF-8')));
-        $name     = $filename . '.' . md5((string) mt_rand());
-        $filepath = $uploadFolder . '/' . $name;
-
-        if (file_exists($filepath)) {
-            $this->setError(Text::_('COM_J2COMMERCE_UPLOAD_ERR_NAMECLASH'));
+        if ($attachmentRoot === null) {
+            $this->setError(Text::_('COM_J2COMMERCE_UPLOAD_ERROR_FOLDER_PERMISSION_ERROR'));
             return false;
         }
 
-        // Move uploaded file
+        $cartId       = $this->getCartId();
+        $uploadFolder = $attachmentRoot . '/tmp/' . $cartId;
+
+        if (!is_dir($uploadFolder) && !mkdir($uploadFolder, 0755, true) && !is_dir($uploadFolder)) {
+            $this->setError(Text::_('COM_J2COMMERCE_UPLOAD_ERROR_FOLDER_PERMISSION_ERROR'));
+            return false;
+        }
+
+        $extension   = strtolower(File::getExt($file['name']));
+        $name        = UploadHelper::randomToken() . ($extension !== '' ? '.' . $extension : '');
+        $mangledname = UploadHelper::randomToken();
+        $filepath    = $uploadFolder . '/' . $name;
+
         if (!move_uploaded_file($file['tmp_name'], $filepath)) {
             $this->setError(Text::_('COM_J2COMMERCE_UPLOAD_ERR_CANTJFILEUPLOAD'));
             return false;
@@ -859,6 +833,7 @@ class CartModel extends BaseDatabaseModel
             'mangled_name'  => $mangledname,
             'saved_name'    => $name,
             'mime_type'     => $mime,
+            'file_size'     => filesize($filepath) ?: 0,
         ];
     }
 
