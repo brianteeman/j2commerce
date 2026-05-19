@@ -522,17 +522,24 @@ class Com_J2commerceInstallerScript extends InstallerScript
         }
 
         $htaccess = <<<'HTACCESS'
-# J2Commerce file storage — never web-served directly.
-Require all denied
+# J2Commerce file storage
+# Disable directory browsing
+Options -Indexes
 
+# Block executable/script files
 <FilesMatch "\.(php|phtml|phar|pl|py|jsp|asp|aspx|sh|cgi|exe|bat)$">
-    Require all denied
-</FilesMatch>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
 
-Options -ExecCGI -Indexes
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+</FilesMatch>
 HTACCESS;
 
-        $this->writeFileIfMissing($root . '/.htaccess', $htaccess);
+        $this->writeFileOverwrite($root . '/.htaccess', $htaccess);
 
         $readme = <<<'README'
 # J2Commerce Customer Upload Storage
@@ -586,6 +593,14 @@ README;
             return;
         }
 
+        if (@file_put_contents($path, $contents) === false) {
+            $this->debugLog("ENSURE FILES FOLDER: failed to write {$path}");
+        }
+    }
+
+    /** Write file, overwriting any existing copy. Logs and continues on failure. */
+    private function writeFileOverwrite(string $path, string $contents): void
+    {
         if (@file_put_contents($path, $contents) === false) {
             $this->debugLog("ENSURE FILES FOLDER: failed to write {$path}");
         }
