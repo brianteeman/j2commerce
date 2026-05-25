@@ -12,6 +12,7 @@
 // phpcs:enable PSR1.Files.SideEffects
 
 use J2Commerce\Component\J2commerce\Administrator\Helper\CurrencyHelper;
+use J2Commerce\Component\J2commerce\Site\Service\ProductLayoutService;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Router\Route;
@@ -48,26 +49,14 @@ if (!$assetsRegistered) {
     $assetsRegistered = true;
 }
 
-$couponCode    = $displayData['couponCode'] ?? '';
-$formId        = $displayData['formId'] ?? 'j2c-coupon';
-$variant       = $displayData['variant'] ?? 'inline';
-$accordionId   = $displayData['accordionId'] ?? '';
-$expanded      = !empty($displayData['expanded']);
-$showDiscount  = !empty($displayData['showDiscount']);
-$framework     = $displayData['framework'] ?? 'bootstrap5';
-$isUikit       = ($framework === 'uikit3');
-$hasCoupon     = !empty($couponCode);
+// Normalize framework: caller passes 'framework' key from its own context
+$rawFramework = $displayData['framework'] ?? 'bootstrap5';
+$framework = ($rawFramework === 'uikit3' || $rawFramework === 'uikit') ? 'uikit' : 'bootstrap5';
 
-// Framework-conditional class strings
-$clsAppliedRow  = $isUikit ? 'uk-flex uk-flex-middle uk-flex-between uk-padding-small' : 'd-flex align-items-center justify-content-between py-1';
-$clsBadge       = $isUikit ? 'uk-label uk-label-success' : 'badge bg-success';
-$clsIconMargin  = $isUikit ? 'uk-margin-small-right' : 'me-1';
-$clsDiscountSm  = $isUikit ? 'uk-text-muted uk-margin-small-left' : 'text-body-tertiary ms-1';
-$clsRemoveBtn   = $isUikit ? 'uk-button uk-button-link uk-text-danger j2c-remove-coupon' : 'btn btn-sm btn-link text-danger p-0 j2c-remove-coupon';
-$clsInputWrap   = $isUikit ? 'uk-flex uk-flex-stretch' : 'input-group';
-$clsInputInner  = $isUikit ? 'uk-width-expand' : 'input-group_inner';
-$clsInput       = $isUikit ? 'uk-input' : 'form-control';
-$clsApplyBtn    = $isUikit ? 'uk-button uk-button-default j2c-apply-coupon' : 'btn btn-outline-secondary j2c-apply-coupon';
+// Compute discount label (framework-agnostic) — passed into framework files so they stay purely presentational
+$couponCode   = $displayData['couponCode'] ?? '';
+$showDiscount = !empty($displayData['showDiscount']);
+$hasCoupon    = !empty($couponCode);
 
 $discountLabel = '';
 if ($hasCoupon && $showDiscount) {
@@ -89,79 +78,11 @@ if ($hasCoupon && $showDiscount) {
     }
 }
 
-?>
-<?php if ($variant === 'accordion' && $isUikit) : ?>
-<li<?php echo $expanded ? ' class="uk-open"' : ''; ?>>
-    <a class="uk-accordion-title" href="#">
-        <?php echo Text::_('COM_J2COMMERCE_COUPON_CODE'); ?>
-        <?php if ($hasCoupon) : ?>
-            <span class="uk-label uk-label-success uk-margin-small-left j2c-coupon-badge"><?php echo htmlspecialchars($couponCode, ENT_QUOTES, 'UTF-8'); ?></span>
-            <?php if ($discountLabel) : ?>
-                <small class="uk-text-muted uk-margin-small-left"><?php echo htmlspecialchars($discountLabel, ENT_QUOTES, 'UTF-8'); ?></small>
-            <?php endif; ?>
-        <?php endif; ?>
-    </a>
-    <div class="uk-accordion-content">
-<?php elseif ($variant === 'accordion') : ?>
-<div class="accordion-item">
-    <h2 class="accordion-header">
-        <button class="accordion-button <?php echo $expanded ? '' : 'collapsed'; ?>"
-                type="button"
-                data-bs-toggle="collapse"
-                data-bs-target="#<?php echo $formId; ?>-collapse"
-                aria-expanded="<?php echo $expanded ? 'true' : 'false'; ?>"
-                aria-controls="<?php echo $formId; ?>-collapse">
-            <?php echo Text::_('COM_J2COMMERCE_COUPON_CODE'); ?>
-            <?php if ($hasCoupon) : ?>
-                <span class="badge bg-success ms-2 j2c-coupon-badge"><?php echo htmlspecialchars($couponCode, ENT_QUOTES, 'UTF-8'); ?></span>
-                <?php if ($discountLabel) : ?>
-                    <small class="text-body-tertiary ms-1"><?php echo htmlspecialchars($discountLabel, ENT_QUOTES, 'UTF-8'); ?></small>
-                <?php endif; ?>
-            <?php endif; ?>
-        </button>
-    </h2>
-    <div id="<?php echo $formId; ?>-collapse"
-         class="accordion-collapse collapse <?php echo $expanded ? 'show' : ''; ?>"
-         <?php if ($accordionId) : ?>data-bs-parent="#<?php echo $accordionId; ?>"<?php endif; ?>>
-        <div class="accordion-body">
-<?php endif; ?>
+$displayData['discountLabel'] = $discountLabel;
 
-<div class="j2c-coupon-form" id="<?php echo $formId; ?>" data-type="coupon">
-    <?php if ($hasCoupon) : ?>
-        <div class="<?php echo $clsAppliedRow; ?>">
-            <span>
-                <span class="<?php echo $clsBadge; ?>">
-                    <span class="icon-tag <?php echo $clsIconMargin; ?>" aria-hidden="true"></span><?php echo htmlspecialchars($couponCode, ENT_QUOTES, 'UTF-8'); ?>
-                </span>
-                <?php if ($discountLabel) : ?>
-                    <small class="<?php echo $clsDiscountSm; ?>"><?php echo htmlspecialchars($discountLabel, ENT_QUOTES, 'UTF-8'); ?></small>
-                <?php endif; ?>
-            </span>
-            <button type="button" class="<?php echo $clsRemoveBtn; ?>"
-                    title="<?php echo Text::_('COM_J2COMMERCE_REMOVE_COUPON'); ?>">
-                <span class="icon-times" aria-hidden="true"></span>
-                <?php echo Text::_('COM_J2COMMERCE_REMOVE'); ?>
-            </button>
-        </div>
-    <?php else : ?>
-        <div class="j2c-coupon-input-wrap">
-            <div class="<?php echo $clsInputWrap; ?>">
-                <div class="<?php echo $clsInputInner; ?>">
-                    <input type="text" name="coupon" class="<?php echo $clsInput; ?>" placeholder="<?php echo Text::_('COM_J2COMMERCE_ENTER_COUPON_CODE'); ?>" aria-label="<?php echo Text::_('COM_J2COMMERCE_COUPON_CODE'); ?>" />
-                </div>
-                <button type="button" class="<?php echo $clsApplyBtn; ?>">
-                    <?php echo Text::_('COM_J2COMMERCE_APPLY_COUPON'); ?>
-                </button>
-            </div>
-        </div>
-    <?php endif; ?>
-</div>
-
-<?php if ($variant === 'accordion' && $isUikit) : ?>
-    </div>
-</li>
-<?php elseif ($variant === 'accordion') : ?>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
+ProductLayoutService::setSubtemplateOverride($framework);
+try {
+    echo ProductLayoutService::renderLayout('form.coupon', $displayData);
+} finally {
+    ProductLayoutService::clearSubtemplateOverride();
+}

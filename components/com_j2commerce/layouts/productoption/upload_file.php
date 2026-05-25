@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 \defined('_JEXEC') or die;
 
+use J2Commerce\Component\J2commerce\Site\Service\ProductLayoutService;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
@@ -38,17 +39,9 @@ if ($isGuest && (int) ComponentHelper::getParams('com_j2commerce')->get('allow_g
 }
 
 $optionId    = (int) ($displayData['productOptionId'] ?? 0);
-$productId   = (int) ($displayData['productId'] ?? 0);
-$required    = (bool) ($displayData['required'] ?? false);
-$optionName  = (string) ($displayData['optionName'] ?? '');
-$ajaxUrl     = (string) ($displayData['ajaxUrl'] ?? '');
 $maxSizeMB   = (float) ($displayData['maxSizeMB'] ?? 0);
 $allowedExts = (string) ($displayData['allowedExts'] ?? '');
-$framework   = ($displayData['framework'] ?? 'bs5') === 'uikit' ? 'uikit' : 'bs5';
-
-$inputId  = 'j2c-upload-input-' . $optionId;
-$hiddenId = 'input-option' . $optionId;
-$esc      = static fn(string $value): string => htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+$framework   = ($displayData['framework'] ?? 'bs5') === 'uikit' ? 'uikit' : 'bootstrap5';
 
 $hintParts = [];
 if ($allowedExts !== '') {
@@ -59,46 +52,13 @@ if ($maxSizeMB > 0) {
 }
 $hintText = implode(' · ', $hintParts);
 
-$dropzoneClass = $framework === 'uikit' ? 'uk-upl-dropzone' : 'j2c-dropzone';
-$labelClass    = $framework === 'uikit' ? 'uk-form-label uk-text-bold d-block mb-2' : 'form-label fw-bold d-block mb-2';
-$requiredClass = $framework === 'uikit' ? 'uk-text-danger' : 'text-danger';
-$wrapperClass  = $framework === 'uikit' ? 'option uk-margin-small-bottom' : 'option mb-3';
-?>
-<div id="option-<?php echo $optionId; ?>" class="<?php echo $wrapperClass; ?>">
-    <span class="<?php echo $labelClass; ?>">
-        <?php echo $esc(Text::_($optionName)); ?><?php if ($required) : ?>
-            <span class="<?php echo $requiredClass; ?>" aria-hidden="true">*</span>
-            <span class="visually-hidden"><?php echo Text::_('JFIELD_FIELD_REQUIRED_LABEL'); ?></span>
-        <?php endif; ?>
-    </span>
-    <label
-        class="<?php echo $dropzoneClass; ?>"
-        for="<?php echo $inputId; ?>"
-        data-j2c-dropzone
-        data-ajax-url="<?php echo $esc($ajaxUrl); ?>"
-        data-hidden-id="<?php echo $esc($hiddenId); ?>"
-        data-maxsize-mb="<?php echo $esc((string) $maxSizeMB); ?>"
-        data-allowed-exts="<?php echo $esc($allowedExts); ?>">
-        <span class="dz-icon">
-            <span class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></span>
-        </span>
-        <span class="dz-title">
-            <?php echo Text::_('COM_J2COMMERCE_UPLOAD_DROP_FILE_OR'); ?>
-            <span class="browse"><?php echo Text::_('COM_J2COMMERCE_UPLOAD_BROWSE'); ?></span>
-        </span>
-        <?php if ($hintText !== '') : ?>
-            <span class="dz-hint"><?php echo $esc($hintText); ?></span>
-        <?php endif; ?>
-        <input
-            id="<?php echo $inputId; ?>"
-            type="file"
-            class="j2c-upload-native"
-            <?php if ($allowedExts !== '') : ?>accept=".<?php echo $esc(str_replace(',', ',.', $allowedExts)); ?>"<?php endif; ?>
-            <?php if ($required) : ?>aria-required="true"<?php endif; ?> />
-    </label>
-    <input
-        type="hidden"
-        name="product_option[<?php echo $optionId; ?>]"
-        value=""
-        id="<?php echo $esc($hiddenId); ?>" />
-</div>
+$displayData['inputId']  = 'j2c-upload-input-' . $optionId;
+$displayData['hiddenId'] = 'input-option' . $optionId;
+$displayData['hintText'] = $hintText;
+
+ProductLayoutService::setSubtemplateOverride($framework);
+try {
+    echo ProductLayoutService::renderLayout('productoption.upload_file', $displayData);
+} finally {
+    ProductLayoutService::clearSubtemplateOverride();
+}
