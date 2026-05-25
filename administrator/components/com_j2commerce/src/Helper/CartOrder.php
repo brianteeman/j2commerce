@@ -739,6 +739,28 @@ class CartOrder
                             return;
                         }
 
+                        // Allow plugins to reject coupon based on cart context.
+                        // Subscribers MUST setEventResult(false) to reject; any other result accepts.
+                        // Optionally pass a 'rejection_reason' argument for customer-facing message.
+                        $couponEvent = J2CommerceHelper::plugin()->event('BeforeApplyCoupon', [$coupon, $this]);
+
+                        if ($couponEvent->getEventResult() === false) {
+                            $this->coupons[] = (object) [
+                                'coupon_code' => $couponCode,
+                                'coupon_id'   => $coupon->j2commerce_coupon_id ?? 0,
+                                'discount'    => 0.0,
+                                'coupon_name' => $coupon->coupon_name ?? $couponCode,
+                                'is_expired'  => false,
+                                'is_rejected' => true,
+                                'error'       => $couponEvent->getArgument(
+                                    'rejection_reason',
+                                    Text::_('COM_J2COMMERCE_COUPON_REJECTED_BY_PLUGIN')
+                                ),
+                            ];
+
+                            return;
+                        }
+
                         $discount        = $this->calculateCouponDiscount($coupon);
                         $this->coupons[] = (object) [
                             'coupon_code' => $couponCode,
