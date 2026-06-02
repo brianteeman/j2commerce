@@ -356,6 +356,126 @@ class InventoryModel extends ListModel
     }
 
     /**
+     * Batch-update inventory for a set of products. Only the fields present in
+     * $fields are written; missing fields are left untouched. The change cascades
+     * to every variant of each product (master + children).
+     *
+     * @param   int[]  $productIds  Selected product ids (cid).
+     * @param   array  $fields      Subset of ['quantity','manage_stock','availability'] => int value.
+     *
+     * @return  int  Number of variant records updated.
+     */
+    public function batchUpdate(array $productIds, array $fields): int
+    {
+        $productIds = array_values(array_unique(array_filter(array_map('intval', $productIds))));
+
+        if (empty($productIds) || empty($fields)) {
+            return 0;
+        }
+
+        $db      = $this->getDatabase();
+        $updated = 0;
+
+        foreach ($productIds as $productId) {
+            $query = $db->getQuery(true)
+                ->select($db->quoteName('j2commerce_variant_id'))
+                ->from($db->quoteName('#__j2commerce_variants'))
+                ->where($db->quoteName('product_id') . ' = :productId')
+                ->bind(':productId', $productId, ParameterType::INTEGER);
+
+            $db->setQuery($query);
+            $variantIds = (array) $db->loadColumn();
+
+            foreach ($variantIds as $variantId) {
+                if ($this->applyBatchFieldsToVariant((int) $variantId, $fields)) {
+                    $updated++;
+                }
+            }
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Apply the chosen batch fields to a single variant. quantity writes to
+     * productquantities (update-or-insert); manage_stock/availability write to variants.
+     *
+     * @param   int    $variantId  The variant to update.
+     * @param   array  $fields     Subset of ['quantity','manage_stock','availability'] => int value.
+     *
+     * @return  bool  True if at least one write occurred.
+     */
+    private function applyBatchFieldsToVariant(int $variantId, array $fields): bool
+    {
+        if (!$variantId) {
+            return false;
+        }
+
+        $db   = $this->getDatabase();
+        $did  = false;
+
+        if (\array_key_exists('manage_stock', $fields) || \array_key_exists('availability', $fields)) {
+            $query = $db->getQuery(true)->update($db->quoteName('#__j2commerce_variants'));
+
+            if (\array_key_exists('manage_stock', $fields)) {
+                $manageStock = (int) $fields['manage_stock'];
+                $query->set($db->quoteName('manage_stock') . ' = :manageStock')
+                    ->bind(':manageStock', $manageStock, ParameterType::INTEGER);
+            }
+
+            if (\array_key_exists('availability', $fields)) {
+                $availability = (int) $fields['availability'];
+                $query->set($db->quoteName('availability') . ' = :availability')
+                    ->bind(':availability', $availability, ParameterType::INTEGER);
+            }
+
+            $query->where($db->quoteName('j2commerce_variant_id') . ' = :variantId')
+                ->bind(':variantId', $variantId, ParameterType::INTEGER);
+
+            $db->setQuery($query);
+            $db->execute();
+            $did = true;
+        }
+
+        if (\array_key_exists('quantity', $fields)) {
+            $quantity = (int) $fields['quantity'];
+
+            $query = $db->getQuery(true)
+                ->select($db->quoteName('j2commerce_productquantity_id'))
+                ->from($db->quoteName('#__j2commerce_productquantities'))
+                ->where($db->quoteName('variant_id') . ' = :variantId')
+                ->bind(':variantId', $variantId, ParameterType::INTEGER);
+
+            $db->setQuery($query);
+            $existingId = $db->loadResult();
+
+            if ($existingId) {
+                $query = $db->getQuery(true)
+                    ->update($db->quoteName('#__j2commerce_productquantities'))
+                    ->set($db->quoteName('quantity') . ' = :quantity')
+                    ->where($db->quoteName('variant_id') . ' = :variantId')
+                    ->bind(':quantity', $quantity, ParameterType::INTEGER)
+                    ->bind(':variantId', $variantId, ParameterType::INTEGER);
+            } else {
+                $emptyAttributes = '';
+                $query           = $db->getQuery(true)
+                    ->insert($db->quoteName('#__j2commerce_productquantities'))
+                    ->columns($db->quoteName(['variant_id', 'quantity', 'on_hold', 'sold', 'product_attributes']))
+                    ->values(':variantId, :quantity, 0, 0, :productAttributes')
+                    ->bind(':variantId', $variantId, ParameterType::INTEGER)
+                    ->bind(':quantity', $quantity, ParameterType::INTEGER)
+                    ->bind(':productAttributes', $emptyAttributes);
+            }
+
+            $db->setQuery($query);
+            $db->execute();
+            $did = true;
+        }
+
+        return $did;
+    }
+
+    /**
      * Save inventory data with form validation support
      *
      * @param   array  $data  Form data to save
