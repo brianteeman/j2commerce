@@ -31,17 +31,40 @@ class TaxprofileField extends ListField
 {
     protected $type = 'Taxprofile';
 
+    public function setup(\SimpleXMLElement $element, $value, $group = null): bool
+    {
+        // Do not normalise if:
+        // 1. A custom nonelabel attribute is present (i.e., "Use Global" context like category_defaults.xml).
+        // 2. The XML element already provides child <option> elements (i.e., a filter field that
+        //    defines its own '' sentinel via <option value="">).
+        $hasUseGlobal  = !empty((string) ($element['nonelabel'] ?? ''));
+        $hasXmlOptions = isset($element->option) && count($element->option) > 0;
+
+        if (!$hasUseGlobal && !$hasXmlOptions && ($value === '' || $value === null)) {
+            $value = '0';
+        }
+
+        return parent::setup($element, $value, $group);
+    }
+
     public function getOptions(): array
     {
         $options = parent::getOptions();
 
-        // Empty value = no tax profile. The label is configurable via the
-        // `nonelabel` attribute so each form can express its own semantics
-        // (product: "Not Taxable"; category default: "Use Global"). Listed
-        // first so a freshly saved form defaults to it.
-        $noneLabel = (string) ($this->element['nonelabel'] ?? '');
-        $noneLabel = $noneLabel !== '' ? $noneLabel : 'COM_J2COMMERCE_NOT_TAXABLE';
-        array_unshift($options, HTMLHelper::_('select.option', '', Text::_($noneLabel)));
+        $noneLabel    = (string) ($this->element['nonelabel'] ?? '');
+        $hasUseGlobal = $noneLabel !== '';
+
+        if ($hasUseGlobal) {
+            // Category context: two leading options so admins can explicitly
+            // choose either "Use Global" (falls back to global config) or
+            // "Not Taxable" (overrides global with 0).
+            // Prepend in reverse order so "Use Global" ends up first.
+            array_unshift($options, HTMLHelper::_('select.option', '0', Text::_('COM_J2COMMERCE_NOT_TAXABLE')));
+            array_unshift($options, HTMLHelper::_('select.option', '', Text::_($noneLabel)));
+        } else {
+            // Config / product context: a single "Not Taxable" leading option.
+            array_unshift($options, HTMLHelper::_('select.option', '0', Text::_('COM_J2COMMERCE_NOT_TAXABLE')));
+        }
 
         try {
             $db = Factory::getContainer()->get(DatabaseInterface::class);
