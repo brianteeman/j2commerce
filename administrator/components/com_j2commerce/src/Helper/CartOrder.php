@@ -18,8 +18,11 @@ use Joomla\CMS\Access\Access;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
+use Joomla\CMS\Log\Log;
 use Joomla\Database\DatabaseInterface;
 use Joomla\Database\ParameterType;
+use Joomla\Event\DispatcherInterface;
+use Joomla\Event\Event;
 
 /**
  * Cart Order value object.
@@ -383,52 +386,104 @@ class CartOrder
     }
 
     /**
-     * Validate order stock availability.
+     * Re-check stock for every managed line at order-build time.
      *
-     * Checks if all items in the order have sufficient stock.
+     * Add-to-cart and quantity-update enforce the stock rules, but time passes before
+     * confirm, so without this two shoppers can both buy the last unit. Quantities are
+     * summed per variant first: two lines of the same variant with different options
+     * must not each be measured against the full stock. Authority is
+     * `ProductHelper::checkStockStatus()` — the same helper the cart behaviors use, so
+     * backorder-enabled variants stay purchasable. A load or query failure is logged and the line
+     * skipped — deliberate, so an infrastructure error cannot block every shopper at checkout.
      *
-     * @return  bool  True if stock is valid.
+     * @return  bool  True when every managed line still has enough stock.
      *
      * @since   6.0.6
      */
     public function validate_order_stock(): bool
     {
+        $wanted = [];
+
         foreach ($this->items as $item) {
-            // Get variant for stock check
+            // Stale messages from a previous run would otherwise be re-reported by
+            // getStockErrors() even once the shortfall is resolved.
+            unset($item->stock_error);
+
             if (!empty($item->variant_id)) {
-                $variantId = (int) $item->variant_id;
-                $quantity  = (int) ($item->product_qty ?? 1);
-
-                // Load variant object for stock check using Table directly
-                try {
-                    $mvcFactory = Factory::getApplication()
-                        ->bootComponent('com_j2commerce')
-                        ->getMVCFactory();
-                    $variantTable = $mvcFactory->createTable('Variant', 'Administrator');
-
-                    if ($variantTable && $variantTable->load($variantId)) {
-                        // Create variant object from table data
-                        $variant = (object) $variantTable->getProperties();
-
-                        // Check if stock management is enabled
-                        $manageStock = ProductHelper::managingStock($variant);
-                        $stock       = ProductHelper::getStockQuantity($variantId);
-
-                        if ($manageStock && $stock < $quantity) {
-                            $item->stock_error = Text::sprintf(
-                                'COM_J2COMMERCE_CART_ITEM_STOCK_NOT_ENOUGH_STOCK',
-                                $item->product_name ?? '',
-                                $stock
-                            );
-                        }
-                    }
-                } catch (\Exception $e) {
-                    // Silent fail - stock validation skipped
-                }
+                $variantId            = (int) $item->variant_id;
+                $wanted[$variantId] ??= 0;
+                $wanted[$variantId] += (int) ($item->product_qty ?? 1);
             }
         }
 
-        return true;
+        $short = [];
+
+        foreach ($wanted as $variantId => $quantity) {
+            try {
+                $variantTable = Factory::getApplication()
+                    ->bootComponent('com_j2commerce')
+                    ->getMVCFactory()
+                    ->createTable('Variant', 'Administrator');
+
+                if (!$variantTable || !$variantTable->load($variantId)) {
+                    continue;
+                }
+
+                $variant = (object) $variantTable->getProperties();
+                // The variants table carries no quantity column — stock lives in
+                // #__j2commerce_productquantities, and validateStock() reads
+                // $variant->quantity.
+                $variant->quantity = ProductHelper::getStockQuantity($variantId);
+
+                if (!ProductHelper::checkStockStatus($variant, $quantity)) {
+                    $short[$variantId] = (int) $variant->quantity;
+                }
+            } catch (\Exception $e) {
+                Log::add(
+                    'Stock re-validation skipped for variant ' . $variantId . ': ' . $e->getMessage(),
+                    Log::WARNING,
+                    'com_j2commerce'
+                );
+            }
+        }
+
+        if ($short === []) {
+            return true;
+        }
+
+        foreach ($this->items as $item) {
+            $variantId = (int) ($item->variant_id ?? 0);
+
+            if (isset($short[$variantId])) {
+                $item->stock_error = Text::sprintf(
+                    'COM_J2COMMERCE_CART_ITEM_STOCK_NOT_ENOUGH_STOCK',
+                    $item->product_name ?? '',
+                    $short[$variantId]
+                );
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Collected per-line stock messages from the last validate_order_stock() run.
+     *
+     * @return  string[]
+     *
+     * @since   6.3.0
+     */
+    public function getStockErrors(): array
+    {
+        $errors = [];
+
+        foreach ($this->items as $item) {
+            if (!empty($item->stock_error)) {
+                $errors[] = (string) $item->stock_error;
+            }
+        }
+
+        return $errors;
     }
 
     /**
@@ -905,9 +960,11 @@ class CartOrder
         $shippingValues = $session->get('shipping_values', [], 'j2commerce');
 
         if (!empty($shippingValues)) {
-            $shippingPrice = (float) ($shippingValues['shipping_price'] ?? 0);
-            $shippingTax   = (float) ($shippingValues['shipping_tax'] ?? 0);
-            $shippingExtra = (float) ($shippingValues['shipping_extra'] ?? 0);
+            // Price/tax/extra are session data — a negative must never reach the
+            // total, even if some writer (or a plugin event) put one there.
+            $shippingPrice = max(0.0, (float) ($shippingValues['shipping_price'] ?? 0));
+            $shippingTax   = max(0.0, (float) ($shippingValues['shipping_tax'] ?? 0));
+            $shippingExtra = max(0.0, (float) ($shippingValues['shipping_extra'] ?? 0));
 
             $this->shippingRate = (object) [
                 'ordershipping_name'         => $shippingValues['shipping_name'] ?? '',
@@ -933,6 +990,89 @@ class CartOrder
                 $this->order_total += $this->order_shipping + $this->order_shipping_tax;
             }
         }
+    }
+
+    /**
+     * Canonical empty shipping_values array (no method selected).
+     *
+     * @return  array<string, mixed>
+     *
+     * @since   6.1.0
+     */
+    public static function emptyShippingValues(): array
+    {
+        return [
+            'shipping_plugin'       => '',
+            'shipping_name'         => '',
+            'shipping_price'        => '0',
+            'shipping_code'         => '',
+            'shipping_tax'          => '0',
+            'shipping_tax_class_id' => 0,
+            'shipping_extra'        => '',
+        ];
+    }
+
+    /**
+     * Re-resolve a shipping selection against a fresh GetShippingRates dispatch; monetary
+     * values always come from the plugin's rate, never from request input. Null on no match.
+     *
+     * @return  array<string, mixed>|null  Canonical shipping_values, or null when no rate matches.
+     *
+     * @since   6.1.0
+     */
+    public static function resolvePluginShippingRate(object $order, string $plugin, string $name, string $code): ?array
+    {
+        $rates = [];
+
+        foreach (J2CommerceHelper::plugin()->eventWithArray('GetShippingRates', [$order]) as $result) {
+            if (\is_array($result) && isset($result['element'])) {
+                $rates[] = $result;
+            } elseif (\is_array($result)) {
+                $rates = array_merge($rates, $result);
+            }
+        }
+
+        // Apply the same exclusion filter the offer pipeline applies — a rate the
+        // merchant excluded (user group, shipping method) must not be resolvable.
+        $filterEvent = new Event('onJ2CommerceFilterShippingRates', [
+            'rates' => $rates,
+            'order' => $order,
+        ]);
+        Factory::getContainer()->get(DispatcherInterface::class)->dispatch('onJ2CommerceFilterShippingRates', $filterEvent);
+        $rates = $filterEvent->getArgument('rates', $rates);
+
+        foreach ($rates as $rate) {
+            if ((string) ($rate['element'] ?? '') !== $plugin || (string) ($rate['name'] ?? '') !== $name) {
+                continue;
+            }
+
+            $rateCode = (string) ($rate['code'] ?? '');
+
+            if ($rateCode !== '' && $code !== '' && $rateCode !== $code) {
+                continue;
+            }
+
+            $price = (float) ($rate['price'] ?? 0);
+            $tax   = (float) ($rate['tax'] ?? 0);
+            $extra = (float) ($rate['extra'] ?? 0);
+
+            // A plugin returning a negative charge is broken — refuse to bind it.
+            if ($price < 0 || $tax < 0 || $extra < 0) {
+                continue;
+            }
+
+            return [
+                'shipping_plugin'       => (string) ($rate['element'] ?? ''),
+                'shipping_name'         => (string) ($rate['name'] ?? ''),
+                'shipping_price'        => (string) $price,
+                'shipping_code'         => $rateCode,
+                'shipping_tax'          => (string) $tax,
+                'shipping_tax_class_id' => (int) ($rate['tax_class_id'] ?? 0),
+                'shipping_extra'        => (string) $extra,
+            ];
+        }
+
+        return null;
     }
 
     /**
@@ -1423,6 +1563,35 @@ class CartOrder
     }
 
     /**
+     * Single source of truth shared by saveOrder() (which persists the email) and coupon
+     * per-customer limit validation (which counts prior uses against it), so the address
+     * checked can never diverge from the address stored. A guest address is self-asserted
+     * — an identity hint, not proof of identity.
+     */
+    public function resolveCheckoutEmail(): string
+    {
+        $app    = Factory::getApplication();
+        $user   = $app->getIdentity();
+        $userId = ($user && $user->id) ? (int) $user->id : 0;
+
+        if ($userId === 0) {
+            $guestData = (array) $app->getSession()->get('guest', [], 'j2commerce');
+
+            return (string) ($guestData['email'] ?? '');
+        }
+
+        $email = (string) ($user->email ?? '');
+
+        // Logged-in identities resolved late carry no email on the session object.
+        if ($email === '') {
+            $userFactory = Factory::getContainer()->get(\Joomla\CMS\User\UserFactoryInterface::class);
+            $email       = (string) ($userFactory->loadUserById($userId)->email ?? '');
+        }
+
+        return $email;
+    }
+
+    /**
      * Persist the cart order to the database.
      *
      * Creates records in orders, orderitems, orderinfos, ordertaxes,
@@ -1446,22 +1615,7 @@ class CartOrder
 
         // Gather user info
         $userId    = ($user && $user->id) ? (int) $user->id : 0;
-        $userEmail = '';
-
-        if ($userId > 0) {
-            $userEmail = $user->email;
-        } else {
-            // Guest checkout — get email from session guest data
-            $guestData = $session->get('guest', [], 'j2commerce');
-            $userEmail = $guestData['email'] ?? '';
-        }
-
-        // Last resort: use Joomla user email for logged-in users whose identity was resolved late
-        if (empty($userEmail) && $userId > 0) {
-            $userFactory = Factory::getContainer()->get(\Joomla\CMS\User\UserFactoryInterface::class);
-            $loadedUser  = $userFactory->loadUserById($userId);
-            $userEmail   = $loadedUser->email ?? '';
-        }
+        $userEmail = $this->resolveCheckoutEmail();
 
         $this->user_id       = $userId;
         $this->user_email    = $userEmail;

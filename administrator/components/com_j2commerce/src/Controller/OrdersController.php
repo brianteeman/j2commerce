@@ -261,6 +261,19 @@ class OrdersController extends AdminController
             return;
         }
 
+        // Requires core.edit; the editorders check is kept for parity with the non-AJAX twins.
+        $identity = $this->app->getIdentity();
+
+        if (!$identity
+            || $identity->guest
+            || !$identity->authorise('core.edit', 'com_j2commerce')
+            || !J2CommerceHelper::canAccess('j2commerce.editorders')) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['success' => false, 'message' => Text::_('JLIB_APPLICATION_ERROR_ACCESS_FORBIDDEN')]);
+            $this->app->close();
+            return;
+        }
+
         $orderId   = $this->input->post->getInt('order_id', 0);
         $newStatus = $this->input->post->getInt('new_status', 0);
         $notify    = $this->input->post->getInt('notify', 0) === 1;

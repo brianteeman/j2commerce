@@ -78,6 +78,35 @@ class ProductsController extends AdminController
         return parent::getModel($name, $prefix, $config);
     }
 
+    /** Authenticate and authorise the caller for a component action. */
+    private function canDo(string $action): bool
+    {
+        $user = $this->app->getIdentity();
+
+        return $user && !$user->guest && $user->authorise($action, 'com_j2commerce');
+    }
+
+    /**
+     * Deny a JSON task, matching the `echo json_encode(...); close()` shape its
+     * siblings use.
+     */
+    private function denyJson(string $key = 'success'): void
+    {
+        echo json_encode([$key => false, 'message' => Text::_('JLIB_APPLICATION_ERROR_ACCESS_FORBIDDEN')]);
+        $this->app->close();
+    }
+
+    /**
+     * Deny a redirecting task, returning the caller to the product option values view.
+     */
+    private function denyRedirect(int $productId, int $productOptionId): void
+    {
+        $url = 'index.php?option=com_j2commerce&view=productoptionvalues&product_id=' . $productId
+            . '&productoption_id=' . $productOptionId . '&tmpl=component';
+
+        $this->setRedirect(Route::_($url, false), Text::_('JLIB_APPLICATION_ERROR_ACCESS_FORBIDDEN'), 'error');
+    }
+
     /**
      * Delete selected products AND trash their linked Joomla articles.
      *
@@ -88,6 +117,13 @@ class ProductsController extends AdminController
     public function deleteWithArticles(): void
     {
         $this->checkToken();
+
+        if (!$this->canDo('core.delete')) {
+            $this->app->enqueueMessage(Text::_('JLIB_APPLICATION_ERROR_ACCESS_FORBIDDEN'), 'error');
+            $this->setRedirect(Route::_('index.php?option=com_j2commerce&view=products', false));
+
+            return;
+        }
 
         $cids = (array) $this->input->get('cid', [], 'int');
         $cids = ArrayHelper::toInteger($cids);
@@ -119,8 +155,23 @@ class ProductsController extends AdminController
                 continue;
             }
 
-            // Trash the linked article via ArticleModel::publish() to respect workflows
+            // Trash the linked article via ArticleModel::publish() to respect workflows.
+            // Authority over com_j2commerce is not authority over com_content — check
+            // the article's own asset before trashing someone else's content.
             if ($productSource === 'com_content' && $articleId > 0) {
+                if (!$this->app->getIdentity()->authorise('core.edit.state', 'com_content.article.' . $articleId)) {
+                    $this->app->enqueueMessage(
+                        Text::sprintf(
+                            'COM_J2COMMERCE_ERROR_TRASH_ARTICLE',
+                            $articleId,
+                            Text::_('JLIB_APPLICATION_ERROR_ACCESS_FORBIDDEN')
+                        ),
+                        'warning'
+                    );
+
+                    continue;
+                }
+
                 try {
                     /** @var \Joomla\Component\Content\Administrator\Model\ArticleModel $articleModel */
                     $articleModel = $this->app->bootComponent('com_content')
@@ -161,7 +212,16 @@ class ProductsController extends AdminController
     public function searchproductfilters(): void
     {
         $app = Factory::getApplication();
-        $q   = $app->getInput()->post->getString('q', '');
+
+        // Called only by the admin product edit form, so it takes the same capability its write twins do.
+        if (!$this->canDo('core.edit')) {
+            echo json_encode([]);
+            $app->close();
+
+            return;
+        }
+
+        $q = $app->getInput()->post->getString('q', '');
 
         // Get database and search for filters
         $db    = Factory::getContainer()->get('DatabaseDriver');
@@ -181,9 +241,11 @@ class ProductsController extends AdminController
         if (!empty($q)) {
             $search = '%' . $db->escape($q, true) . '%';
             $query->where(
-                '(' . $db->quoteName('f.filter_name') . ' LIKE ' . $db->quote($search) .
-                ' OR ' . $db->quoteName('fg.group_name') . ' LIKE ' . $db->quote($search) . ')'
-            );
+                '(' . $db->quoteName('f.filter_name') . ' LIKE :search' .
+                ' OR ' . $db->quoteName('fg.group_name') . ' LIKE :searchGroup)'
+            )
+                ->bind(':search', $search, ParameterType::STRING)
+                ->bind(':searchGroup', $search, ParameterType::STRING);
         }
 
         $query->order($db->quoteName('fg.group_name') . ' ASC')
@@ -210,6 +272,13 @@ class ProductsController extends AdminController
 
         if (!\Joomla\CMS\Session\Session::checkToken('request')) {
             echo json_encode(['success' => false, 'msg' => Text::_('JINVALID_TOKEN')]);
+            $app->close();
+
+            return;
+        }
+
+        if (!$this->canDo('core.delete')) {
+            echo json_encode(['success' => false, 'msg' => Text::_('JLIB_APPLICATION_ERROR_ACCESS_FORBIDDEN')]);
             $app->close();
 
             return;
@@ -263,7 +332,15 @@ class ProductsController extends AdminController
      */
     public function getProductFilterListAjax(): void
     {
-        $app        = Factory::getApplication();
+        $app = Factory::getApplication();
+
+        if (!$this->canDo('core.edit')) {
+            echo json_encode(['html' => '']);
+            $app->close();
+
+            return;
+        }
+
         $productId  = $app->getInput()->post->getInt('product_id', 0);
         $limitstart = $app->getInput()->post->getInt('limitstart', 0);
         $limit      = $app->getInput()->post->getInt('limit', 20);
@@ -330,7 +407,17 @@ class ProductsController extends AdminController
      */
     public function getRelatedProducts(): void
     {
-        $app       = Factory::getApplication();
+        $app = Factory::getApplication();
+
+        // Returns the product catalogue with SKUs. Reached only from the admin product
+        // edit form and the admin selector fields in the bundle/box-builder plugins.
+        if (!$this->canDo('core.edit')) {
+            echo json_encode(['products' => []]);
+            $app->close();
+
+            return;
+        }
+
         $q         = $app->getInput()->post->getString('q', '');
         $productId = $app->getInput()->post->getInt('product_id', 0);
 
@@ -368,9 +455,11 @@ class ProductsController extends AdminController
             // Search by product name or SKU
             $search = '%' . $db->escape($q, true) . '%';
             $query->where(
-                '(' . $db->quoteName('c.title') . ' LIKE ' . $db->quote($search) .
-                ' OR ' . $db->quoteName('v.sku') . ' LIKE ' . $db->quote($search) . ')'
-            );
+                '(' . $db->quoteName('c.title') . ' LIKE :search' .
+                ' OR ' . $db->quoteName('v.sku') . ' LIKE :searchSku)'
+            )
+                ->bind(':search', $search, ParameterType::STRING)
+                ->bind(':searchSku', $search, ParameterType::STRING);
 
             $query->group($db->quoteName('p.j2commerce_product_id'))
                 ->order($db->quoteName('c.title') . ' ASC')
@@ -395,7 +484,15 @@ class ProductsController extends AdminController
     public function getBoxBuilderProducts(): void
     {
         $app = Factory::getApplication();
-        $q   = $app->getInput()->post->getString('q', '');
+
+        if (!$this->canDo('core.edit')) {
+            echo json_encode(['products' => []]);
+            $app->close();
+
+            return;
+        }
+
+        $q = $app->getInput()->post->getString('q', '');
 
         $products = [];
 
@@ -423,9 +520,11 @@ class ProductsController extends AdminController
                 ->where($db->quoteName('p.enabled') . ' = 1')
                 ->where($db->quoteName('p.product_type') . ' IN (' . implode(',', array_map([$db, 'quote'], $types)) . ')')
                 ->where(
-                    '(' . $db->quoteName('c.title') . ' LIKE ' . $db->quote($search)
-                    . ' OR ' . $db->quoteName('v.sku') . ' LIKE ' . $db->quote($search) . ')'
+                    '(' . $db->quoteName('c.title') . ' LIKE :search'
+                    . ' OR ' . $db->quoteName('v.sku') . ' LIKE :searchSku)'
                 )
+                ->bind(':search', $search, ParameterType::STRING)
+                ->bind(':searchSku', $search, ParameterType::STRING)
                 ->order($db->quoteName('c.title') . ' ASC')
                 ->setLimit(20);
 
@@ -460,6 +559,15 @@ class ProductsController extends AdminController
 
         // Check for request forgeries
         $this->checkToken();
+
+        // A type change deletes the product row and every child record it owns, so it
+        // needs the delete capability as well as edit — not just the dispatcher's
+        // core.manage.
+        if (!$this->canDo('core.edit') || !$this->canDo('core.delete')) {
+            $this->denyJson();
+
+            return;
+        }
 
         $productId = $app->getInput()->post->getInt('product_id', 0);
         $newType   = $app->getInput()->post->getString('product_type', '');
@@ -497,12 +605,28 @@ class ProductsController extends AdminController
             $app->close();
         }
 
-        // Allow plugins to run their events
+        // Allow plugins to handle the type change themselves (and thereby veto the
+        // destructive delete below). eventWithArray() returns the LIST of per-plugin
+        // results, so a top-level 'success' key only appears when a plugin called
+        // setEventResult() — the common addResult() path nests it one level down.
+        // Checking only the top level made the veto unreachable and the delete
+        // unconditional.
         $pluginResponse = J2CommerceHelper::plugin()->eventWithArray('ChangeProductType', [$productId, $newType]);
+        $handled        = null;
 
-        // If plugin response has success, use it; otherwise delete and continue
-        if (!empty($pluginResponse) && isset($pluginResponse['success'])) {
-            $json = $pluginResponse;
+        if (isset($pluginResponse['success'])) {
+            $handled = $pluginResponse;
+        } else {
+            foreach ($pluginResponse as $pluginResult) {
+                if (\is_array($pluginResult) && isset($pluginResult['success'])) {
+                    $handled = $pluginResult;
+                    break;
+                }
+            }
+        }
+
+        if ($handled !== null) {
+            $json = $handled;
         } else {
             // Delete the existing product (this removes child table data)
             $table = $this->getModel()->getTable('Product');
@@ -727,7 +851,17 @@ class ProductsController extends AdminController
     public function setproductoptionvalues(): void
     {
         $app = Factory::getApplication();
-        $db  = Factory::getContainer()->get('DatabaseDriver');
+
+        // Renders the option-value grid (SKUs, price and weight modifiers) for a
+        // product. Read-only, but product data — same capability as its AJAX twin.
+        if (!$this->canDo('core.edit')) {
+            echo Text::_('JLIB_APPLICATION_ERROR_ACCESS_FORBIDDEN');
+            $app->close();
+
+            return;
+        }
+
+        $db = Factory::getContainer()->get('DatabaseDriver');
 
         $productId       = $app->getInput()->getInt('product_id', 0);
         $productOptionId = $app->getInput()->getInt('productoption_id', 0);
@@ -853,6 +987,13 @@ class ProductsController extends AdminController
 
         $productId         = $app->getInput()->getInt('product_id', 0);
         $productOptionId   = $app->getInput()->getInt('productoption_id', 0);
+
+        if (!$this->canDo('core.edit')) {
+            $this->denyRedirect($productId, $productOptionId);
+
+            return;
+        }
+
         $optionValueId     = $app->getInput()->getInt('optionvalue_id', 0);
         $price             = $app->getInput()->getFloat('product_optionvalue_price', 0.0);
         $pricePrefix       = $app->getInput()->getString('product_optionvalue_prefix', '+');
@@ -947,6 +1088,14 @@ class ProductsController extends AdminController
         $productOptionId = $app->getInput()->getInt('productoption_id', 0);
         $poptionValues   = $app->getInput()->get('jform', [], 'array');
 
+        // This rewrites product_optionvalue_price / _prefix / _weight for every row id
+        // supplied — a price write, so it takes the edit capability.
+        if (!$this->canDo('core.edit')) {
+            $this->denyRedirect($productId, $productOptionId);
+
+            return;
+        }
+
         if (isset($poptionValues['poption_value']) && \is_array($poptionValues['poption_value'])) {
             foreach ($poptionValues['poption_value'] as $povId => $data) {
                 $povId = (int) $povId;
@@ -1016,6 +1165,12 @@ class ProductsController extends AdminController
         $productOptionId = $app->getInput()->getInt('productoption_id', 0);
         $cid             = $app->getInput()->get('cid', [], 'array');
 
+        if (!$this->canDo('core.delete')) {
+            $this->denyRedirect($productId, $productOptionId);
+
+            return;
+        }
+
         $cid = ArrayHelper::toInteger($cid);
         $cid = array_filter($cid);
 
@@ -1061,6 +1216,12 @@ class ProductsController extends AdminController
 
         $productId       = $app->getInput()->getInt('product_id', 0);
         $productOptionId = $app->getInput()->getInt('productoption_id', 0);
+
+        if (!$this->canDo('core.edit')) {
+            $this->denyJson();
+
+            return;
+        }
 
         // Get the option_id from the product option
         $query = $db->getQuery(true);
@@ -1165,12 +1326,21 @@ class ProductsController extends AdminController
     public function getProductOptionValuesAjax(): void
     {
         $app = Factory::getApplication();
-        $db  = Factory::getContainer()->get('DatabaseDriver');
+
+        $response = ['success' => false, 'html' => '', 'message' => ''];
+
+        if (!$this->canDo('core.edit')) {
+            $response['message'] = Text::_('JLIB_APPLICATION_ERROR_ACCESS_FORBIDDEN');
+            echo json_encode($response);
+            $app->close();
+
+            return;
+        }
+
+        $db = Factory::getContainer()->get('DatabaseDriver');
 
         $productId       = $app->getInput()->getInt('product_id', 0);
         $productOptionId = $app->getInput()->getInt('productoption_id', 0);
-
-        $response = ['success' => false, 'html' => '', 'message' => ''];
 
         if (!$productId || !$productOptionId) {
             $response['message'] = Text::_('COM_J2COMMERCE_INVALID_PRODUCT_OR_OPTION');
@@ -1303,6 +1473,12 @@ class ProductsController extends AdminController
     {
         $this->checkToken('request');
 
+        if (!$this->canDo('core.edit')) {
+            $this->denyJson();
+
+            return;
+        }
+
         $app = Factory::getApplication();
         $db  = Factory::getContainer()->get('DatabaseDriver');
 
@@ -1394,6 +1570,12 @@ class ProductsController extends AdminController
     {
         $this->checkToken('request');
 
+        if (!$this->canDo('core.edit')) {
+            $this->denyJson();
+
+            return;
+        }
+
         $app = Factory::getApplication();
         $db  = Factory::getContainer()->get('DatabaseDriver');
 
@@ -1468,6 +1650,12 @@ class ProductsController extends AdminController
     {
         $this->checkToken('request');
 
+        if (!$this->canDo('core.delete')) {
+            $this->denyJson();
+
+            return;
+        }
+
         $app = Factory::getApplication();
         $db  = Factory::getContainer()->get('DatabaseDriver');
 
@@ -1515,6 +1703,12 @@ class ProductsController extends AdminController
         $productId       = $app->getInput()->getInt('product_id', 0);
         $productOptionId = $app->getInput()->getInt('productoption_id', 0);
         $cid             = $app->getInput()->get('cid', [], 'array');
+
+        if (!$this->canDo('core.edit')) {
+            $this->denyJson();
+
+            return;
+        }
 
         $cid   = ArrayHelper::toInteger($cid);
         $povId = !empty($cid) ? (int) $cid[0] : 0;
@@ -1579,6 +1773,12 @@ class ProductsController extends AdminController
             $response['message'] = Text::_('JINVALID_TOKEN');
             echo json_encode($response);
             $app->close();
+            return;
+        }
+
+        if (!$this->canDo('core.edit')) {
+            $this->denyJson();
+
             return;
         }
 
@@ -1760,6 +1960,12 @@ class ProductsController extends AdminController
             return;
         }
 
+        if (!$this->canDo('core.delete')) {
+            $this->denyJson();
+
+            return;
+        }
+
         $variantId = $app->getInput()->getInt('variant_id', 0);
         $productId = $app->getInput()->getInt('product_id', 0);
 
@@ -1810,6 +2016,12 @@ class ProductsController extends AdminController
             $response['message'] = Text::_('JINVALID_TOKEN');
             echo json_encode($response);
             $app->close();
+            return;
+        }
+
+        if (!$this->canDo('core.delete')) {
+            $this->denyJson();
+
             return;
         }
 
@@ -1869,6 +2081,12 @@ class ProductsController extends AdminController
             $response['message'] = Text::_('JINVALID_TOKEN');
             echo json_encode($response);
             $app->close();
+            return;
+        }
+
+        if (!$this->canDo('core.delete')) {
+            $this->denyJson();
+
             return;
         }
 
@@ -2338,6 +2556,14 @@ class ProductsController extends AdminController
         $app = Factory::getApplication();
         $db  = Factory::getContainer()->get('DatabaseDriver');
 
+        // Requires core.edit; the denial is shaped like an empty page so the caller's `if (data.html)` is a no-op.
+        if (!$this->canDo('core.edit')) {
+            echo json_encode(['html' => '', 'total' => 0, 'message' => Text::_('JLIB_APPLICATION_ERROR_ACCESS_FORBIDDEN')]);
+            $app->close();
+
+            return;
+        }
+
         $productId  = $app->getInput()->getInt('product_id', 0);
         $limitstart = $app->getInput()->getInt('limitstart', 0);
         $limit      = $app->getInput()->getInt('limit', 20);
@@ -2601,6 +2827,12 @@ class ProductsController extends AdminController
             return;
         }
 
+        if (!$this->canDo('core.edit')) {
+            $this->denyJson();
+
+            return;
+        }
+
         $db        = Factory::getContainer()->get('DatabaseDriver');
         $variantId = $app->getInput()->getInt('variant_id', 0);
         $productId = $app->getInput()->getInt('product_id', 0);
@@ -2668,6 +2900,12 @@ class ProductsController extends AdminController
             $response['message'] = Text::_('JINVALID_TOKEN');
             echo json_encode($response);
             $app->close();
+            return;
+        }
+
+        if (!$this->canDo('core.edit')) {
+            $this->denyJson();
+
             return;
         }
 
@@ -3059,6 +3297,12 @@ class ProductsController extends AdminController
             $response['message'] = Text::_('JINVALID_TOKEN');
             echo json_encode($response);
             $app->close();
+            return;
+        }
+
+        if (!$this->canDo('core.edit')) {
+            $this->denyJson();
+
             return;
         }
 

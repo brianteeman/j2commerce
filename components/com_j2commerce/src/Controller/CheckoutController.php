@@ -17,6 +17,7 @@ namespace J2Commerce\Component\J2commerce\Site\Controller;
 // phpcs:enable PSR1.Files.SideEffects
 
 use J2Commerce\Component\J2commerce\Administrator\Helper\CartHelper;
+use J2Commerce\Component\J2commerce\Administrator\Helper\CartOrder;
 use J2Commerce\Component\J2commerce\Administrator\Helper\CurrencyHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\CustomFieldHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\J2CommerceHelper;
@@ -29,6 +30,7 @@ use Joomla\CMS\Factory;
 use Joomla\CMS\Form\Form;
 use Joomla\CMS\Form\FormFactoryInterface;
 use Joomla\CMS\Language\Text;
+use Joomla\CMS\Log\Log;
 use Joomla\CMS\MVC\Controller\BaseController;
 use Joomla\CMS\Plugin\PluginHelper;
 use Joomla\CMS\Router\Route;
@@ -36,6 +38,9 @@ use Joomla\CMS\Session\Session;
 use Joomla\CMS\Uri\Uri;
 use Joomla\CMS\User\UserFactoryInterface;
 use Joomla\Database\DatabaseInterface;
+use Joomla\Database\Exception\ConnectionFailureException;
+use Joomla\Database\Exception\ExecutionFailureException;
+use Joomla\Database\Exception\PrepareStatementFailureException;
 use Joomla\Database\ParameterType;
 use Joomla\Event\DispatcherInterface;
 use Joomla\Registry\Registry;
@@ -81,7 +86,8 @@ class CheckoutController extends BaseController
         $html = $view->loadTemplate($tpl);
 
         if ($html instanceof \Exception) {
-            echo '<div class="alert alert-danger">' . htmlspecialchars($html->getMessage(), ENT_QUOTES, 'UTF-8') . '</div>';
+            Log::add('checkout step "' . $tpl . '" failed to render: ' . $html->getMessage(), Log::ERROR, 'com_j2commerce');
+            echo '<div class="alert alert-danger">' . htmlspecialchars(Text::_('COM_J2COMMERCE_ERR_GENERIC'), ENT_QUOTES, 'UTF-8') . '</div>';
         } else {
             echo $html;
         }
@@ -331,10 +337,11 @@ class CheckoutController extends BaseController
 
                 $session->clear('guest', 'j2commerce');
                 $json['redirect'] = $this->getCheckoutUrl();
-            } catch (\RuntimeException $e) {
-                $json['error']['warning'] = $e->getMessage() ?: Text::_('COM_J2COMMERCE_CHECKOUT_ERROR_LOGIN');
             } catch (\Exception $e) {
-                $json['error']['warning'] = Text::_('COM_J2COMMERCE_CHECKOUT_ERROR');
+                // Log the detail; the shopper gets a generic message.
+                Log::add('checkout.loginValidate failed: ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');
+
+                $json['error']['warning'] = Text::_('COM_J2COMMERCE_CHECKOUT_ERROR_LOGIN');
             }
         }
 
@@ -560,7 +567,11 @@ class CheckoutController extends BaseController
             $session->clear('payment_method', 'j2commerce');
             $session->clear('payment_methods', 'j2commerce');
         } catch (\Throwable $e) {
-            $json['error']['warning'] = $e->getMessage();
+            // Plugin-enforced registration rules (privacy consent, terms) are caught
+            // as InvalidArgumentException above with their own translated message.
+            Log::add('checkout.registerValidate failed: ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');
+
+            $json['error']['warning'] = Text::_('COM_J2COMMERCE_ERR_GENERIC');
             $this->jsonResponse($json);
 
             return;
@@ -1210,6 +1221,40 @@ class CheckoutController extends BaseController
     }
 
     /**
+     * Re-check a chosen gateway against the plugin-declared availability rules
+     * (geozone, subtotal range). The render-time filter only pruned the UI list —
+     * a shopper can still POST any installed gateway, so validate and confirm must
+     * re-run the same pruning against the submitted selection.
+     */
+    private function isPaymentMethodAllowed(string $element, ?object $order): bool
+    {
+        if ($element === '') {
+            return false;
+        }
+
+        $methods = [];
+        $results = J2CommerceHelper::plugin()->eventWithArray('GetPaymentPlugins', [$order]);
+
+        foreach ($results as $result) {
+            if (\is_array($result) && isset($result['element'])) {
+                $methods[] = $result;
+            } elseif (\is_array($result)) {
+                $methods = array_merge($methods, $result);
+            }
+        }
+
+        $methods = $this->filterUnavailablePaymentMethods($methods, $order);
+
+        foreach ($methods as $method) {
+            if (($method['element'] ?? '') === $element) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Resolve the geozone IDs matching the buyer's billing address.
      *
      * @return  int[]|null  Matching geozone IDs, or null when no billing
@@ -1316,17 +1361,23 @@ class CheckoutController extends BaseController
             if ($shippingRequired && empty($values['shipping_plugin'] ?? '')) {
                 $json['error']['shipping'] = Text::_('COM_J2COMMERCE_CHECKOUT_SELECT_A_SHIPPING_METHOD');
             } else {
-                $shippingValues = [
-                    'shipping_plugin'       => $values['shipping_plugin'] ?? '',
-                    'shipping_name'         => $values['shipping_name'] ?? '',
-                    'shipping_price'        => $values['shipping_price'] ?? 0,
-                    'shipping_code'         => $values['shipping_code'] ?? '',
-                    'shipping_tax'          => $values['shipping_tax'] ?? 0,
-                    'shipping_tax_class_id' => (int) ($values['shipping_tax_class_id'] ?? 0),
-                    'shipping_extra'        => $values['shipping_extra'] ?? '',
-                ];
-                $session->set('shipping_values', $shippingValues, 'j2commerce');
-                $session->set('shipping_method', $values['shipping_plugin'] ?? '', 'j2commerce');
+                // Rates are resolved server-side from the identifier; request money values are ignored.
+                $selectedPlugin = (string) ($values['shipping_plugin'] ?? '');
+                $resolved       = $selectedPlugin !== ''
+                    ? CartOrder::resolvePluginShippingRate(
+                        $order,
+                        $selectedPlugin,
+                        (string) ($values['shipping_name'] ?? ''),
+                        (string) ($values['shipping_code'] ?? '')
+                    )
+                    : null;
+
+                if ($selectedPlugin !== '' && $resolved === null) {
+                    $json['error']['shipping'] = Text::_('COM_J2COMMERCE_CHECKOUT_SELECT_A_SHIPPING_METHOD');
+                } else {
+                    $session->set('shipping_values', $resolved ?? CartOrder::emptyShippingValues(), 'j2commerce');
+                    $session->set('shipping_method', $selectedPlugin, 'j2commerce');
+                }
             }
         }
 
@@ -1342,6 +1393,8 @@ class CheckoutController extends BaseController
                 $paymentPlugin = $this->input->getString('payment_plugin', '');
 
                 if (empty($paymentPlugin)) {
+                    $json['error']['warning'] = Text::_('COM_J2COMMERCE_CHECKOUT_ERROR_PAYMENT_METHOD');
+                } elseif (!$this->isPaymentMethodAllowed($paymentPlugin, $order)) {
                     $json['error']['warning'] = Text::_('COM_J2COMMERCE_CHECKOUT_ERROR_PAYMENT_METHOD');
                 }
 
@@ -1553,13 +1606,36 @@ class CheckoutController extends BaseController
         try {
             $order = $this->getCartOrder();
 
-            if ($order && method_exists($order, 'validateOrder')) {
-                $order->validateOrder($order);
+            // Stock is enforced at add-to-cart and quantity-update, but time passes
+            // before confirm — re-check here so two shoppers cannot both buy the last
+            // unit. (The former guard called a validateOrder() that exists nowhere.)
+            if ($order && !$order->validate_order_stock()) {
+                foreach ($order->getStockErrors() as $stockError) {
+                    $errors[] = $stockError;
+                }
             }
+        } catch (\Throwable $e) {
+            Log::add('checkout.confirm order build failed: ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');
 
+            $errors[] = Text::_('COM_J2COMMERCE_ERR_GENERIC');
+        }
+
+        try {
             J2CommerceHelper::plugin()->event('AfterOrderValidate', [&$order]);
-        } catch (\Exception $e) {
+        } catch (ExecutionFailureException | ConnectionFailureException | PrepareStatementFailureException $e) {
+            // Database faults also extend RuntimeException, so catch them before the plugin-veto arm.
+            Log::add('checkout.confirm AfterOrderValidate database failure: ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');
+
+            $errors[] = Text::_('COM_J2COMMERCE_ERR_GENERIC');
+        } catch (\RuntimeException $e) {
+            // App plugins veto the order here (opening hours, additional terms,
+            // subscription payment-method rules) by throwing an already-translated
+            // shopper-facing message — it must reach the confirm step verbatim.
             $errors[] = $e->getMessage();
+        } catch (\Throwable $e) {
+            Log::add('checkout.confirm AfterOrderValidate failed: ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');
+
+            $errors[] = Text::_('COM_J2COMMERCE_ERR_GENERIC');
         }
 
         $orderpaymentType = $session->get('payment_method', '', 'j2commerce');
@@ -1581,6 +1657,11 @@ class CheckoutController extends BaseController
 
         if ($showPayment && empty(trim($orderpaymentType))) {
             $errors[] = Text::_('COM_J2COMMERCE_CHECKOUT_ERROR_PAYMENT_METHOD_NOT_SELECTED');
+        }
+
+        // The selected gateway must survive the same availability pruning the render-time list applied.
+        if ($showPayment && !empty(trim($orderpaymentType)) && $order && !$this->isPaymentMethodAllowed($orderpaymentType, $order)) {
+            $errors[] = Text::_('COM_J2COMMERCE_CHECKOUT_ERROR_PAYMENT_METHOD');
         }
 
         $pluginHtml = '';
@@ -1655,7 +1736,11 @@ class CheckoutController extends BaseController
 
                 $order = $savedOrder;
             } catch (\Exception $e) {
-                $errors[] = $e->getMessage();
+                // Order persistence + PrePayment plugin rendering. Gateway setup
+                // failures carry API keys and SQL in their messages.
+                Log::add('checkout.confirm saveOrder/PrePayment failed: ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');
+
+                $errors[] = Text::_('COM_J2COMMERCE_ERR_GENERIC');
             }
         }
 
@@ -1714,6 +1799,11 @@ class CheckoutController extends BaseController
 
         $orderpaymentType = $this->input->getString('orderpayment_type', '');
 
+        // True once this request has been accepted through the tokenless GET branch,
+        // i.e. the shape an off-site gateway return takes. Nothing on that path has
+        // proven shopper intent, so request-supplied free text is not honoured there.
+        $tokenlessGatewayReturn = false;
+
         if (empty($orderpaymentType)) {
             Session::checkToken('post') or $this->app->redirect($this->getCheckoutUrl());
         } elseif ($this->input->getMethod() === 'POST') {
@@ -1737,6 +1827,13 @@ class CheckoutController extends BaseController
 
                 $this->app->redirect($this->getCheckoutUrl());
             }
+        } elseif (!$this->isTopLevelNavigation() || !$this->isGatewayReturnFor($orderpaymentType)) {
+            // Off-site gateway returns carry no token: accept only a top-level navigation on a gateway with a live order.
+            $this->app->redirect($this->getCheckoutUrl());
+
+            return;
+        } else {
+            $tokenlessGatewayReturn = true;
         }
 
         $session        = $this->app->getSession();
@@ -1832,8 +1929,26 @@ class CheckoutController extends BaseController
             $orderTable->load(['order_id' => $orderId]);
         }
 
-        // Save customer_note from the confirm step (textarea moved here from shipping/payment step)
-        $customerNote = strip_tags($this->input->getString('customer_note', ''));
+        $showPayment = false;
+        J2CommerceHelper::plugin()->event('ChangeShowPaymentOnTotalZero', [$orderTable, &$showPayment]);
+
+        // A zero-total order with no payment step requires a form token; refuse a tokenless GET.
+        if ($tokenlessGatewayReturn
+            && !empty($orderId)
+            && (float) ($orderTable->order_total ?? 0) === 0.0
+            && !$showPayment
+        ) {
+            $this->app->redirect($this->getCheckoutUrl());
+
+            return;
+        }
+
+        // Save customer_note from the confirm step (textarea moved here from shipping/payment
+        // step). A gateway redirecting the shopper back never carries this field, so on the
+        // tokenless GET it is ignored outright rather than written verbatim to the order.
+        $customerNote = $tokenlessGatewayReturn
+            ? ''
+            : strip_tags($this->input->getString('customer_note', ''));
 
         if ($orderTable && !empty($customerNote) && !empty($orderId)) {
             $orderTable->customer_note = $customerNote;
@@ -1875,11 +1990,8 @@ class CheckoutController extends BaseController
         // ---------------------------------------------------------------
         // Process payment via plugin events
         // ---------------------------------------------------------------
-        $html        = '';
-        $emailsSent  = false;
-
-        $showPayment = false;
-        J2CommerceHelper::plugin()->event('ChangeShowPaymentOnTotalZero', [$orderTable, &$showPayment]);
+        $html       = '';
+        $emailsSent = false;
 
         if (!empty($orderId) && (float) ($orderTable->order_total ?? 0) === 0.0 && !$showPayment) {
             // Confirm the free order directly — OrderTable::store() fires
@@ -2100,6 +2212,15 @@ class CheckoutController extends BaseController
             $this->jsonResponse(['success' => false, 'error' => Text::_('PLG_J2COMMERCE_PAYMENT_PAYPAL_INVALID_REQUEST')]);
         }
 
+        // Re-bind to the caller's session order.
+        $sessionOrderId = (string) $this->app->getUserState('j2commerce.order_id', '');
+
+        if ($sessionOrderId === '' || $sessionOrderId !== (string) $orderId) {
+            $this->jsonResponse(['success' => false, 'error' => Text::_('PLG_J2COMMERCE_PAYMENT_PAYPAL_INVALID_REQUEST')]);
+        }
+
+        $input['order_id'] = $sessionOrderId;
+
         // Dispatch to payment plugin via event
         $event  = J2CommerceHelper::plugin()->event('PaymentCreateOrder', ['payment_paypal', $input]);
         $result = $event->getArgument('result', ['success' => false, 'error' => 'No payment plugin responded']);
@@ -2125,6 +2246,15 @@ class CheckoutController extends BaseController
         if (empty($paypalOrderId) || empty($orderId)) {
             $this->jsonResponse(['success' => false, 'error' => Text::_('PLG_J2COMMERCE_PAYMENT_PAYPAL_INVALID_REQUEST')]);
         }
+
+        // Re-bind to the caller's session order.
+        $sessionOrderId = (string) $this->app->getUserState('j2commerce.order_id', '');
+
+        if ($sessionOrderId === '' || $sessionOrderId !== (string) $orderId) {
+            $this->jsonResponse(['success' => false, 'error' => Text::_('PLG_J2COMMERCE_PAYMENT_PAYPAL_INVALID_REQUEST')]);
+        }
+
+        $input['order_id'] = $sessionOrderId;
 
         $event  = J2CommerceHelper::plugin()->event('PaymentCaptureOrder', ['payment_paypal', $input]);
         $result = $event->getArgument('result', ['success' => false, 'error' => 'No payment plugin responded']);
@@ -2159,23 +2289,32 @@ class CheckoutController extends BaseController
         try {
             $session = $this->app->getSession();
 
-            $shippingValues = [
-                'shipping_plugin'       => $this->input->getString('shipping_plugin', ''),
-                'shipping_name'         => $this->input->getString('shipping_name', ''),
-                'shipping_price'        => $this->input->getString('shipping_price', '0'),
-                'shipping_code'         => $this->input->getString('shipping_code', ''),
-                'shipping_tax'          => $this->input->getString('shipping_tax', '0'),
-                'shipping_tax_class_id' => $this->input->getInt('shipping_tax_class_id', 0),
-                'shipping_extra'        => $this->input->getString('shipping_extra', ''),
-            ];
+            // Rates are resolved server-side from the identifier; request money values are ignored.
+            $selectedPlugin = $this->input->getString('shipping_plugin', '');
+            $order          = $this->getCartOrder();
+            $resolved       = $selectedPlugin !== '' && $order
+                ? CartOrder::resolvePluginShippingRate(
+                    $order,
+                    $selectedPlugin,
+                    $this->input->getString('shipping_name', ''),
+                    $this->input->getString('shipping_code', '')
+                )
+                : null;
 
-            $session->set('shipping_values', $shippingValues, 'j2commerce');
-            $session->set('shipping_method', $shippingValues['shipping_plugin'], 'j2commerce');
+            if ($selectedPlugin !== '' && $resolved === null) {
+                $json['success'] = false;
+                $json['message'] = Text::_('COM_J2COMMERCE_CHECKOUT_SELECT_A_SHIPPING_METHOD');
+            } else {
+                $session->set('shipping_values', $resolved ?? CartOrder::emptyShippingValues(), 'j2commerce');
+                $session->set('shipping_method', $selectedPlugin, 'j2commerce');
 
-            $json['success'] = true;
-        } catch (\Exception $e) {
+                $json['success'] = true;
+            }
+        } catch (\Throwable $e) {
+            Log::add('saveShippingSelection failed: ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');
+
             $json['success'] = false;
-            $json['message'] = $e->getMessage();
+            $json['message'] = Text::_('COM_J2COMMERCE_ERR_GENERIC');
         }
 
         echo json_encode($json);
@@ -2210,8 +2349,10 @@ class CheckoutController extends BaseController
 
             $json['success'] = true;
         } catch (\Exception $e) {
+            Log::add('checkout.savePaymentSelection failed: ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');
+
             $json['success'] = false;
-            $json['message'] = $e->getMessage();
+            $json['message'] = Text::_('COM_J2COMMERCE_ERR_GENERIC');
         }
 
         echo json_encode($json);
@@ -2262,12 +2403,74 @@ class CheckoutController extends BaseController
             $json['success'] = true;
             $json['html']    = $html;
         } catch (\Exception $e) {
+            Log::add('checkout.refreshSidecart failed: ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');
+
             $json['success'] = false;
-            $json['message'] = $e->getMessage();
+            $json['message'] = Text::_('COM_J2COMMERCE_ERR_GENERIC');
         }
 
         echo json_encode($json);
         $this->app->close();
+    }
+
+    /** False only when the browser declares a sub-resource load; a gateway returns by navigating, so a real return is never rejected. An absent header counts as navigation. */
+    private function isTopLevelNavigation(): bool
+    {
+        $dest = strtolower($this->input->server->getString('HTTP_SEC_FETCH_DEST', ''));
+
+        return !\in_array($dest, [
+            'audio', 'audioworklet', 'embed', 'font', 'image', 'manifest',
+            'object', 'paintworklet', 'report', 'script', 'style', 'track', 'video',
+        ], true);
+    }
+
+    /** True when the caller's session holds a live order on the submitted gateway. */
+    private function isGatewayReturnFor(string $orderpaymentType): bool
+    {
+        if ($orderpaymentType === '') {
+            return false;
+        }
+
+        $primedOrderId = (string) $this->app->getUserState('j2commerce.order_id', '');
+
+        // No order in flight. A dead session is the normal outcome of lingering at the
+        // gateway (15-minute default), of cookie_samesite=Strict and of a webview handing
+        // off to the default browser — rejecting it strands an approved payment that
+        // PostPayment has not captured yet. Nothing this gate protects is reachable
+        // without a primed order id, and return URLs carry &order_id= so plugins resolve
+        // the order from the request anyway.
+        if ($primedOrderId === '') {
+            return true;
+        }
+
+        $primed = $this->loadOrderRow($primedOrderId);
+
+        if ($primed !== null && (string) ($primed->orderpayment_type ?? '') === $orderpaymentType) {
+            return true;
+        }
+
+        // Session primed with a different order — a second tab re-confirmed while the
+        // first was still at the gateway (#1208). Fall back to the order the request
+        // names: accept it when it is on this gateway and has not already settled.
+        $requested = $this->loadOrderRow((string) $this->input->getString('order_id', ''));
+
+        if ($requested === null || (string) ($requested->orderpayment_type ?? '') !== $orderpaymentType) {
+            return false;
+        }
+
+        return !\in_array((int) ($requested->order_state_id ?? 0), [1, 2, 6, 7, 8], true)
+            && !\in_array(strtolower((string) ($requested->transaction_status ?? '')), ['refunded', 'voided'], true);
+    }
+
+    private function loadOrderRow(string $orderId): ?object
+    {
+        if ($orderId === '') {
+            return null;
+        }
+
+        $table = $this->getMvcFactory()->createTable('Order', 'Administrator');
+
+        return ($table && $table->load(['order_id' => $orderId])) ? $table : null;
     }
 
     /**

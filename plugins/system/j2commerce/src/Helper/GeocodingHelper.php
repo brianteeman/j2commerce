@@ -140,12 +140,8 @@ class GeocodingHelper
         $url = self::NOMINATIM_URL . '?' . http_build_query($params);
 
         try {
-            $http     = (new HttpFactory())->getHttp([
-                'transport.curl' => [
-                    \CURLOPT_SSL_VERIFYPEER => false,
-                    \CURLOPT_SSL_VERIFYHOST => 0,
-                ],
-            ]);
+            // Certificate verification stays on: the response is cached for 90 days.
+            $http     = (new HttpFactory())->getHttp();
             $response = $http->get($url, [
                 'User-Agent' => $userAgent,
                 'Accept'     => 'application/json',

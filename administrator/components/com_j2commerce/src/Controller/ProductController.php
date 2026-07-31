@@ -17,6 +17,7 @@ namespace J2Commerce\Component\J2commerce\Administrator\Controller;
 use J2Commerce\Component\J2commerce\Administrator\Helper\ProductHelper;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
+use Joomla\CMS\Log\Log;
 use Joomla\CMS\MVC\Controller\FormController;
 use Joomla\CMS\Router\Route;
 use Joomla\Database\DatabaseInterface;
@@ -506,6 +507,20 @@ class ProductController extends FormController
 
         header('Content-Type: application/json; charset=utf-8');
 
+        // Takes the same core.edit + core.delete pair as the plural twin.
+        $user = $app->getIdentity();
+
+        if (
+            !$user
+            || $user->guest
+            || !$user->authorise('core.edit', 'com_j2commerce')
+            || !$user->authorise('core.delete', 'com_j2commerce')
+        ) {
+            echo json_encode(['success' => false, 'message' => Text::_('JLIB_APPLICATION_ERROR_ACCESS_FORBIDDEN')]);
+            $app->close();
+            return;
+        }
+
         if (!$productId || !$newType) {
             echo json_encode(['success' => false, 'message' => Text::_('COM_J2COMMERCE_INVALID_INPUT_FIELD')]);
             $app->close();
@@ -582,7 +597,8 @@ class ProductController extends FormController
 
             echo json_encode(['success' => true]);
         } catch (\Throwable $e) {
-            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            Log::add('changeProductType failed for product ' . $productId . ': ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');
+            echo json_encode(['success' => false, 'message' => Text::_('COM_J2COMMERCE_ERR_GENERIC')]);
         }
 
         $app->close();

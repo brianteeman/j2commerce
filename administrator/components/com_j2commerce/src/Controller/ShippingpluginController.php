@@ -208,6 +208,14 @@ class ShippingpluginController extends BaseController
             }
         }
 
+        // Gate the dispatcher on core.edit, matching the checkPermission() its save/apply siblings enforce.
+        $user = Factory::getApplication()->getIdentity();
+
+        if (!$user || $user->guest || !ContentHelper::getActions('com_j2commerce')->get('core.edit')) {
+            $this->sendJsonError(Text::_('JLIB_APPLICATION_ERROR_ACCESS_FORBIDDEN'));
+            return;
+        }
+
         $plugin = $this->input->getCmd('plugin', '');
         $action = $this->input->getCmd('action', '');
 

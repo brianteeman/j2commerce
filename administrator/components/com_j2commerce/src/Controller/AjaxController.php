@@ -143,6 +143,18 @@ class AjaxController extends BaseController
             return;
         }
 
+        // Requires the component-configuration capability: core.options or core.admin, either of which com_config admits on the Options form.
+        $user = $app->getIdentity();
+
+        if (
+            !$user
+            || $user->guest
+            || (!$user->authorise('core.options', 'com_j2commerce') && !$user->authorise('core.admin', 'com_j2commerce'))
+        ) {
+            $this->sendJsonResponse(false, Text::_('JLIB_APPLICATION_ERROR_ACCESS_FORBIDDEN'), null);
+            return;
+        }
+
         try {
             // Generate new queue key
             $siteName    = $app->get('sitename', 'J2Commerce');
