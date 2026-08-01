@@ -955,11 +955,26 @@ class InventoryHelper
     // =========================================================================
 
     /**
-     * Apply the inventory side of an order status transition.
+     * Order statuses that do NOT hold stock: New (5) has not been placed against inventory
+     * yet, Cancelled (6) has given its units back, and Failed (3) is a dead end that nothing
+     * sweeps — holding there would strand the units on every declined card.
      *
-     * The single place that decides which transitions move stock. Both writers of
-     * order_state_id route here — OrderTable::store() and OrderModel::updateOrderStatus() —
-     * so the two cannot drift apart, and the state sets are changed in one spot.
+     * @since   6.5.0
+     */
+    private const NON_HOLDING_STATUSES = [3, 5, 6];
+
+    /**
+     * Does an order in this status hold reserved stock?
+     *
+     * @since   6.5.0
+     */
+    public static function statusHoldsStock(int $statusId): bool
+    {
+        return !\in_array($statusId, self::NON_HOLDING_STATUSES, true);
+    }
+
+    /**
+     * Apply the inventory side of an order status transition.
      *
      * @param   string    $orderId       The order_id string (NOT the PK).
      * @param   int|null  $oldStatusId   Prior status; null for a newly created order.
@@ -969,23 +984,13 @@ class InventoryHelper
      */
     public static function applyStatusTransition(string $orderId, ?int $oldStatusId, int $newStatusId): void
     {
-        // Status 3 = Failed, 5 = New, 6 = Cancelled. An order in one of these holds no
-        // units: New has not reserved yet, Failed never completed, Cancelled has already
-        // given them back. Every other status holds them — Confirmed, Pending, Processed,
-        // Shipped, Delivered, and any status a merchant adds, which is the safe default.
-        //
-        // Pending has to hold: without it an unpaid order reserves nothing, so hold_stock
-        // has no reservation to release when it expires.
-        $nonHolding = [3, 5, 6];
+        // Stock moves only when the order crosses the holding boundary, in either direction.
+        $oldHolds = $oldStatusId !== null && self::statusHoldsStock($oldStatusId);
+        $newHolds = self::statusHoldsStock($newStatusId);
 
-        // One predicate read in both directions. Deciding the two sides separately is what
-        // let a transition credit units it never debited, or debit none and still credit.
-        $heldBefore = $oldStatusId !== null && !\in_array($oldStatusId, $nonHolding, true);
-        $holdsAfter = !\in_array($newStatusId, $nonHolding, true);
-
-        if (!$heldBefore && $holdsAfter) {
+        if ($newHolds && !$oldHolds) {
             self::reduceOrderStock($orderId);
-        } elseif ($heldBefore && !$holdsAfter) {
+        } elseif ($oldHolds && !$newHolds) {
             self::restoreOrderStock($orderId);
         }
     }
