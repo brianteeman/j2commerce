@@ -34,7 +34,7 @@ final class J2Commerce extends CMSPlugin implements SubscriberInterface
         $router    = $event->getRouter();
         $component = ['component' => 'com_j2commerce'];
 
-        // Products — public GET, authenticated write
+        // Products — authenticated (createCRUDRoutes defaults $publicGets to false)
         $router->createCRUDRoutes('v1/j2commerce/products', 'products', $component);
 
         // Orders — authenticated
@@ -52,7 +52,7 @@ final class J2Commerce extends CMSPlugin implements SubscriberInterface
         // Vouchers — authenticated CRUD
         $router->createCRUDRoutes('v1/j2commerce/vouchers', 'vouchers', $component);
 
-        // Catalog reference data — public GET
+        // Catalog reference data — authenticated
         $router->createCRUDRoutes('v1/j2commerce/manufacturers', 'manufacturers', $component);
         $router->createCRUDRoutes('v1/j2commerce/currencies', 'currencies', $component);
         $router->createCRUDRoutes('v1/j2commerce/countries', 'countries', $component);
@@ -87,9 +87,10 @@ final class J2Commerce extends CMSPlugin implements SubscriberInterface
             // Order items
             new Route(['GET'], 'v1/j2commerce/orders/:id/items', 'orderitems.displayList', ['id' => '(\d+)'], $private),
 
-            // Order history
+            // Order history — read only. The POST twin resolved an Orderhistory model that
+            // has never existed (only OrderhistoriesModel does), so it 500'd after passing
+            // every gate. Status changes that write history go through orders/:id/status.
             new Route(['GET'], 'v1/j2commerce/orders/:id/history', 'orderhistories.displayList', ['id' => '(\d+)'], $private),
-            new Route(['POST'], 'v1/j2commerce/orders/:id/history', 'orderhistories.add', ['id' => '(\d+)'], $private),
 
             // Fulfilment (issue #1187) — ship-to detail + event-safe status + tracking write
             new Route(['GET'], 'v1/j2commerce/orders/:id/fulfilment', 'orderfulfilment.displayItem', ['id' => '(\d+)'], $private),
