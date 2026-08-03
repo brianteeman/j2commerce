@@ -40,26 +40,26 @@ class HtmlView extends BaseHtmlView
     protected $form;
     protected $item;
     protected $state;
-    protected bool $isNew           = false;
-    protected array $orderStatuses   = [];
-    protected string $dateFormat     = 'Y-m-d';
-    protected string $timeFormat     = 'H:i:s';
-    protected int $customerDays      = 0;
-    protected int $totalSales        = 0;
-    protected string $currencySymbol = '';
-    protected string $currencyCode   = '';
-    protected bool $hasPackingSlip   = false;
-    protected ?Registry $params      = null;
-    protected array $countries       = [];
-    protected array $shippingMethods = [];
-    protected array $paymentMethods  = [];
-    protected string $takePaymentUrl = '';
+    protected bool $isNew                 = false;
+    protected array $orderStatuses        = [];
+    protected string $dateFormat          = 'Y-m-d';
+    protected string $timeFormat          = 'H:i:s';
+    protected int $customerDays           = 0;
+    protected int $totalSales             = 0;
+    protected string $currencySymbol      = '';
+    protected string $currencyCode        = '';
+    protected bool $hasPackingSlip        = false;
+    protected ?Registry $params           = null;
+    protected array $countries            = [];
+    protected array $shippingMethods      = [];
+    protected array $paymentMethods       = [];
+    protected string $takePaymentUrl      = '';
     protected bool $originalMethodMissing = false;
     protected string $originalMethodLabel = '';
-    protected bool $canRefundPayment = false;
-    protected bool $canChargeBalance = false;
-    protected float $refundableAmount = 0.0;
-    protected float $balanceDueAmount = 0.0;
+    protected bool $canRefundPayment      = false;
+    protected bool $canChargeBalance      = false;
+    protected float $refundableAmount     = 0.0;
+    protected float $balanceDueAmount     = 0.0;
 
     /** Set by the billing/shipping tab templates before loading the shared address form. */
     protected string $addressFormType = 'billing';
@@ -67,7 +67,8 @@ class HtmlView extends BaseHtmlView
     public function display($tpl = null): void
     {
         if (!J2CommerceHelper::canAccess('j2commerce.vieworders')) {
-            J2CommerceHelper::denyAccess(); return;
+            J2CommerceHelper::denyAccess();
+            return;
         }
 
         $this->loadAdminAssets();

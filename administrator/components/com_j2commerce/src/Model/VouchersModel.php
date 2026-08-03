@@ -173,7 +173,7 @@ class VouchersModel extends ListModel
         // Filter by D4 derived status
         $status = (string) $this->getState('filter.status');
 
-        if ($status !== '' && in_array($status, ['disabled', 'expired', 'not_yet_valid', 'depleted', 'active'], true)) {
+        if ($status !== '' && \in_array($status, ['disabled', 'expired', 'not_yet_valid', 'depleted', 'active'], true)) {
             $query->having(self::STATUS_CASE_SQL . ' = :status')
                 ->bind(':status', $status);
         }
@@ -223,7 +223,7 @@ class VouchersModel extends ListModel
         $orderCol = $this->state->get('list.ordering', 'a.ordering');
         $orderDir = strtoupper((string) $this->state->get('list.direction', 'ASC')) === 'DESC' ? 'DESC' : 'ASC';
 
-        if (!in_array($orderCol, $this->filter_fields, true)) {
+        if (!\in_array($orderCol, $this->filter_fields, true)) {
             $orderCol = 'a.ordering';
         }
 

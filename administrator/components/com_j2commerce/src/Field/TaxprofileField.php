@@ -38,7 +38,7 @@ class TaxprofileField extends ListField
         // 2. The XML element already provides child <option> elements (i.e., a filter field that
         //    defines its own '' sentinel via <option value="">).
         $hasUseGlobal  = !empty((string) ($element['nonelabel'] ?? ''));
-        $hasXmlOptions = isset($element->option) && count($element->option) > 0;
+        $hasXmlOptions = isset($element->option) && \count($element->option) > 0;
 
         if (!$hasUseGlobal && !$hasXmlOptions && ($value === '' || $value === null)) {
             $value = '0';

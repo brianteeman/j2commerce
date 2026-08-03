@@ -69,7 +69,7 @@ class JsonView extends BaseJsonView
                 'category_name' => isset($item->source->category_title)
                     ? strip_tags((string) $item->source->category_title)
                     : '',
-                'in_stock'      => $inStock,
+                'in_stock' => $inStock,
             ];
         }
 
