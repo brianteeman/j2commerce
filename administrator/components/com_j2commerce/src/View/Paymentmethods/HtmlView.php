@@ -89,7 +89,8 @@ class HtmlView extends BaseHtmlView
     public function display($tpl = null)
     {
         if (!J2CommerceHelper::canAccess('j2commerce.viewsetup')) {
-            J2CommerceHelper::denyAccess(); return;
+            J2CommerceHelper::denyAccess();
+            return;
         }
 
         $this->loadAdminAssets();
