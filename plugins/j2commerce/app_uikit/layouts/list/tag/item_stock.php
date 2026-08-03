@@ -45,7 +45,8 @@ if (!$inStock) {
 } else {
     $stockText = Text::_('COM_J2COMMERCE_IN_STOCK');
 }
+$show = $productHelper->validateVariableProduct($product);
 ?>
-<div class="j2commerce-product-stock <?php echo $stockClass; ?><?php echo !$inStock && ($showCart ?? false) ? ' uk-invisible' : ''; ?>">
+<div class="j2commerce-product-stock <?php echo $stockClass; ?><?php echo !$show && ($showCart ?? false) ? ' uk-invisible' : ''; ?>">
     <?php echo $stockText; ?>
 </div>
