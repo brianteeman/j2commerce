@@ -1410,6 +1410,7 @@ final class J2Commerce extends CMSPlugin implements SubscriberInterface
             'showCart'        => $this->optionsContainAny($allOptions, ['cart', 'cartonly', 'full', 'card', 'detail']),
             'showQtyField'    => !\in_array('noqty', $allOptions, true),
             'showSku'         => $this->optionsContainAny($allOptions, ['sku', 'full', 'card', 'detail']),
+            'showUpc'         => $this->optionsContainAny($allOptions, ['upc', 'full', 'card', 'detail']),
             'showStock'       => $this->optionsContainAny($allOptions, ['stock', 'full', 'card', 'detail']),
             'showDescription' => $this->optionsContainAny($allOptions, ['description', 'desc', 'full', 'card', 'detail']),
             'showQuickview'   => \in_array('quickview', $allOptions, true),
@@ -1437,6 +1438,7 @@ final class J2Commerce extends CMSPlugin implements SubscriberInterface
         $params->set('list_show_title', 1);
         $params->set('list_show_description', 0);
         $params->set('list_show_product_sku', 0);
+        $params->set('list_show_product_upc', 0);
         $params->set('list_show_product_stock', 0);
         $params->set('list_enable_quickview', 0);
         $params->set('list_link_title', 1);
