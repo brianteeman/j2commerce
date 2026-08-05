@@ -35,38 +35,71 @@ $versionParts = explode('.', trim($matches[1]));
 $baseVersion  = implode('.', array_slice($versionParts, 0, 3));
 $baseVersionDashed = str_replace('.', '-', $baseVersion);
 
-// Determine the dev build number. The authoritative counter lives in
-// build/.devbuild.json (keyed by base version) so it keeps climbing even when
-// docs/packages is cleared. Existing package filenames are still scanned as a
-// floor so a fresh counter can never collide with an already-shipped build.
+// ── Release tag ──────────────────────────────────────────────────────────────
+// Pass --release=X.Y.Z (or --release X.Y.Z) to produce a clean release package
+// instead of a dev build. The supplied version is used verbatim; the build
+// counter is not incremented and no 4th digit is appended.
+//
+//   php build/build_package.php --release=6.5.1
+//   php build/build_package.php --release 6.5.1
+//
+$releaseVersion       = null;
+$releaseVersionDashed = '';
+$argv ??= [];
+foreach ($argv as $i => $arg) {
+    if (preg_match('/^--release=(.+)$/', $arg, $rm)) {
+        $releaseVersion = trim($rm[1]);
+        break;
+    }
+    if ($arg === '--release' && isset($argv[$i + 1])) {
+        $releaseVersion = trim($argv[$i + 1]);
+        break;
+    }
+}
+
 $counterFile   = $buildDir . '/.devbuild.json';
 $buildCounters = [];
-if (is_file($counterFile)) {
-    $decoded = json_decode((string) file_get_contents($counterFile), true);
-    if (is_array($decoded)) {
-        $buildCounters = $decoded;
-    }
-}
-$trackedHighest = isset($buildCounters[$baseVersion]) ? (int) $buildCounters[$baseVersion] : 0;
 
-// Floor from existing package filenames (legacy `_beta_{N}` + current `-{N}`).
-$scanHighest = 0;
-foreach (['com_j2commerce_', 'pkg_j2commerce_'] as $prefix) {
-    $base = $outputDir . '/' . $prefix . $baseVersionDashed;
-    foreach (array_merge(glob($base . '_beta_*.zip') ?: [], glob($base . '-*.zip') ?: []) as $f) {
-        if (preg_match('/(?:_beta_|-)(\d+)\.zip$/', $f, $m)) {
-            $scanHighest = max($scanHighest, (int) $m[1]);
+if ($releaseVersion !== null) {
+    if (!preg_match('/^\d+\.\d+\.\d+$/', $releaseVersion)) {
+        die("ERROR: --release version must be in MAJOR.MINOR.PATCH format (e.g. 6.5.1), got: {$releaseVersion}\n");
+    }
+    $version              = $releaseVersion;
+    $releaseVersionDashed = str_replace('.', '-', $releaseVersion);
+    $buildNum             = null; // not used in release mode
+} else {
+    // ── Dev build number ─────────────────────────────────────────────────────
+    // The authoritative counter lives in build/.devbuild.json (keyed by base
+    // version) so it keeps climbing even when docs/packages is cleared.
+    // Existing package filenames are still scanned as a floor so a fresh counter
+    // can never collide with an already-shipped build.
+    if (is_file($counterFile)) {
+        $decoded = json_decode((string) file_get_contents($counterFile), true);
+        if (is_array($decoded)) {
+            $buildCounters = $decoded;
         }
     }
+    $trackedHighest = isset($buildCounters[$baseVersion]) ? (int) $buildCounters[$baseVersion] : 0;
+
+    // Floor from existing package filenames (legacy `_beta_{N}` + current `-{N}`).
+    $scanHighest = 0;
+    foreach (['com_j2commerce_', 'pkg_j2commerce_'] as $prefix) {
+        $base = $outputDir . '/' . $prefix . $baseVersionDashed;
+        foreach (array_merge(glob($base . '_beta_*.zip') ?: [], glob($base . '-*.zip') ?: []) as $f) {
+            if (preg_match('/(?:_beta_|-)(\d+)\.zip$/', $f, $m)) {
+                $scanHighest = max($scanHighest, (int) $m[1]);
+            }
+        }
+    }
+
+    $buildNum = max($trackedHighest, $scanHighest) + 1;
+
+    // Version stamped into the package manifests + version.php (e.g. 6.3.2.7) so
+    // 3rd-party extensions and the admin footer can identify the exact dev build.
+    // The 4th digit only ever exists inside the built package — repo source files
+    // (j2commerce.xml, version.php) are never modified by this script.
+    $version = $baseVersion . '.' . $buildNum;
 }
-
-$buildNum = max($trackedHighest, $scanHighest) + 1;
-
-// Version stamped into the package manifests + version.php (e.g. 6.3.2.7) so
-// 3rd-party extensions and the admin footer can identify the exact dev build.
-// The 4th digit only ever exists inside the built package — repo source files
-// (j2commerce.xml, version.php) are never modified by this script.
-$version = $baseVersion . '.' . $buildNum;
 
 $excludePatterns = [
     '.git', '.gitignore', '.github', '.claude',
@@ -573,8 +606,8 @@ function createPackageManifest(string $version, array $plugins, array $adminModu
 // ── Main Build ─────────────────────────────────────────────────────────────────
 
 echo "\n=== J2Commerce Package Builder (type=package) ===\n";
-echo "Version: {$version}\n";
-echo "Build Number: {$buildNum}\n";
+echo "Version: {$version}" . ($releaseVersion !== null ? " [RELEASE]" : "") . "\n";
+echo "Build Number: " . ($releaseVersion !== null ? 'RELEASE' : $buildNum) . "\n";
 echo "Joomla Root: {$joomlaRoot}\n\n";
 
 passthru('php ' . __DIR__ . '/check_vendors.php --build-check');
@@ -637,7 +670,9 @@ if (!empty($conflictFiles)) {
 
 echo "Conflict marker check OK\n";
 
-$finalZipName = "pkg_j2commerce_{$baseVersionDashed}-{$buildNum}.zip";
+$finalZipName = ($releaseVersion !== null)
+    ? "pkg_j2commerce_{$releaseVersionDashed}.zip"
+    : "pkg_j2commerce_{$baseVersionDashed}-{$buildNum}.zip";
 $finalZipPath = $outputDir . '/' . $finalZipName;
 echo "\nBuilding: {$finalZipName}\n\n";
 
@@ -724,12 +759,14 @@ foreach ($innerZips as $innerZipPath) {
 $outerZip->close();
 
 // Persist the dev build counter only after the package was assembled, so a
-// failed build does not burn a build number. Keyed by base version.
-$buildCounters[$baseVersion] = $buildNum;
-file_put_contents(
-    $counterFile,
-    json_encode($buildCounters, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
-);
+// failed build does not burn a build number. Skipped for release builds.
+if ($releaseVersion === null) {
+    $buildCounters[$baseVersion] = $buildNum;
+    file_put_contents(
+        $counterFile,
+        json_encode($buildCounters, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
+    );
+}
 
 // ── 3. Summary ────────────────────────────────────────────────────────────────
 
@@ -741,7 +778,7 @@ echo "\n╔═══════════════════════
 echo "║                  PACKAGE BUILD SUMMARY                       ║\n";
 echo "╠══════════════════════════════════════════════════════════════╣\n";
 printf("║  Package Type:     %-40s  ║\n", "type=\"package\" (Joomla native)");
-printf("║  Build Number:     %-40s  ║\n", $buildNum);
+printf("║  Build Number:     %-40s  ║\n", $releaseVersion !== null ? 'RELEASE' : $buildNum);
 printf("║  Version:          %-40s  ║\n", $version);
 printf("║  Extensions:       %-40s  ║\n", $extTotal . " (1 component + 2 libraries + " . $pluginZipCount . " plugins + " . (count($adminModules) + count($siteModules)) . " modules)");
 printf("║  Inner ZIPs:       %-40s  ║\n", $innerCount);
