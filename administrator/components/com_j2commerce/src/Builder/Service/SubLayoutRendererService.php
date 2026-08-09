@@ -129,7 +129,7 @@ PHP,
               class="j2commerce-addtocart-form mt-auto"
               id="j2commerce-addtocart-form-<?php echo $productId; ?>"
               data-product_id="<?php echo $productId; ?>"
-              data-product_type="<?php echo $product->product_type; ?>"
+              data-product_type="<?php echo $productType; ?>"
               enctype="multipart/form-data"
               >
 
@@ -210,7 +210,8 @@ use J2Commerce\Component\J2commerce\Site\Service\ProductLayoutService;
 extract($displayData);
 
 $productId = $product->j2commerce_product_id;
-$cssClass = $product->params->get('product_css_class', '') ?? '';
+$productType = htmlspecialchars($product->product_type ?? '', ENT_QUOTES, 'UTF-8');
+$cssClass = htmlspecialchars($product->params->get('product_css_class', '') ?? '', ENT_QUOTES, 'UTF-8');
 $beforeHtml = J2CommerceHelper::plugin()->eventWithHtml('BeforeProductListItemDisplay',[$product, $context, &$displayData])->getArgument('html', '');
 $afterHtml = J2CommerceHelper::plugin()->eventWithHtml('AfterProductListItemDisplay',[$product, $context, &$displayData])->getArgument('html', '');
 $cartType = (int) $params->get('list_show_cart', 1);
@@ -222,7 +223,7 @@ PHP;
     private function getContainerOpen(): string
     {
         return <<<'PHP'
-<div class="j2commerce-product-item j2commerce-product-<?php echo $productId; ?> j2commerce-type-<?php echo $product->product_type; ?> <?php echo $cssClass; ?> d-flex flex-column" data-product-id="<?php echo $productId; ?>" data-product-type="<?php echo $product->product_type;?>" data-equal-height="itemContainer">
+<div class="j2commerce-product-item j2commerce-product-<?php echo $productId; ?> j2commerce-type-<?php echo $productType; ?> <?php echo $cssClass; ?> d-flex flex-column" data-product-id="<?php echo $productId; ?>" data-product-type="<?php echo $productType; ?>" data-equal-height="itemContainer">
 
     <?php echo $beforeHtml; ?>
 
@@ -398,7 +399,7 @@ PHP;
                 '}',
                 '',
                 "\$cartType       = (int) \$params->get('list_show_cart', 1);",
-                "\$btnClass       = \$params->get('addtocart_button_class', 'btn btn-primary') ?? 'btn btn-primary';",
+                "\$btnClass       = htmlspecialchars(\$params->get('addtocart_button_class', 'btn btn-primary') ?? 'btn btn-primary', ENT_QUOTES, 'UTF-8');",
                 "\$productId      = (int) \$product->j2commerce_product_id;",
                 "\$productType    = htmlspecialchars(\$product->product_type ?? '', ENT_QUOTES, 'UTF-8');",
                 "\$esc            = static fn(string \$value): string => htmlspecialchars(\$value, ENT_QUOTES, 'UTF-8');",
