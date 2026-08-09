@@ -92,12 +92,13 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     function getEditorContent() {
-        // For visual mode, sync GrapesJS content to the hidden body field first
+        // For visual mode, sync GrapesJS content to the hidden body field and return it directly.
+        // Do NOT fall through to the Joomla editor API check below: the body field is type="editor"
+        // so TinyMCE is registered in Joomla.editors.instances["jform_body"] even when hidden.
+        // TinyMCE holds the original saved body (stale), while GrapesJS holds the current edits.
         if (window._j2cGrapesEditor) {
             const bodySourceField = document.querySelector("select[name=\"jform[body_source]\"]");
             if (bodySourceField && bodySourceField.value === "visual") {
-                // Trigger the form sync so jform_body has postprocessed HTML
-                const syncBtn = document.querySelector("button[data-j2c-sync]");
                 if (typeof window.syncGrapesDataToForm === "function") {
                     window.syncGrapesDataToForm(window._j2cGrapesEditor);
                 } else {
@@ -109,9 +110,11 @@ document.addEventListener("DOMContentLoaded", function() {
                     const bodyField = document.querySelector("#jform_body");
                     if (bodyField) bodyField.value = html;
                 }
+                const bodyField = document.querySelector("#jform_body");
+                return bodyField ? bodyField.value : "";
             }
         }
-        // Try Joomla editor API first (TinyMCE/JCE sync content on getValue)
+        // Non-visual mode: try Joomla editor API first (TinyMCE/JCE sync content on getValue)
         if (Joomla.editors && Joomla.editors.instances && Joomla.editors.instances["jform_body"]) {
             const val = Joomla.editors.instances["jform_body"].getValue();
             if (val) return val;
