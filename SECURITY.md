@@ -6,13 +6,14 @@ This document outlines security procedures and policies for the `J2Commerce Proj
   * [Response Handling](#response-handling)
   * [Security Announcement Policy](#security-announcement-policy)
 
-## Reporting a Bug
+## Reporting a Vulnerability
 
 The `J2Commerce` team takes all security bugs in `J2Commerce` and its add-ons seriously.
 
-If you find a possible vulnerability, please report it to us using support@j2commerce.com.
+If you discover a security vulnerability in J2Commerce, please **do not** open a public GitHub issue.
+Report it to us using security@j2commerce.com or [J2Commerce Support.](https://www.j2commerce.com/support/security-reports).
 
-For support with a site which has been attacked, please open a private ticket at [J2Commerce Support.](https://www.j2commerce.com/support).
+For support with a site which has been attacked, please open a private ticket at [J2Commerce Support.](https://www.j2commerce.com/support/security-reports).
 
 Thank you for improving the security of `J2Commerce`.
 
