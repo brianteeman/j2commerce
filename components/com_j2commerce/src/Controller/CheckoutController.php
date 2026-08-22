@@ -23,6 +23,7 @@ use J2Commerce\Component\J2commerce\Administrator\Helper\CurrencyHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\CustomFieldHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\J2CommerceHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\OrderPayGrantHelper;
+use J2Commerce\Component\J2commerce\Administrator\Helper\TableSaveHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\UtilitiesHelper;
 use J2Commerce\Component\J2commerce\Site\Helper\CheckoutContextHelper;
 use J2Commerce\Component\J2commerce\Site\Helper\CheckoutStepsHelper;
@@ -1495,13 +1496,11 @@ class CheckoutController extends BaseController
                     if ($fieldErrors) {
                         $json['error'] = array_merge($json['error'] ?? [], $fieldErrors);
                     } else {
-                        $customValues = [];
-
-                        foreach ($paymentFields as $field) {
-                            $customValues[$field->field_namekey] = (string) ($formData[$field->field_namekey] ?? '');
-                        }
-
-                        $session->set('payment_custom_fields', $customValues, 'j2commerce');
+                        $session->set(
+                            'payment_custom_fields',
+                            CustomFieldHelper::collectAddressData($paymentFields, $formData),
+                            'j2commerce'
+                        );
                     }
                 }
             }
@@ -1631,7 +1630,7 @@ class CheckoutController extends BaseController
 
             if ($orderpaymentType !== '' && $orderpaymentType !== ($existingOrder->orderpayment_type ?? '')) {
                 $existingOrder->orderpayment_type = $orderpaymentType;
-                $existingOrder->store();
+                TableSaveHelper::store($existingOrder, 'checkout.confirm.orderpayment_type');
             }
 
             $pluginHtml = '';
@@ -2198,7 +2197,7 @@ class CheckoutController extends BaseController
 
         if ($orderTable && !empty($customerNote) && !empty($orderId)) {
             $orderTable->customer_note = $customerNote;
-            $orderTable->store();
+            TableSaveHelper::store($orderTable, 'checkout.confirm.customer_note');
         }
 
         // ---------------------------------------------------------------

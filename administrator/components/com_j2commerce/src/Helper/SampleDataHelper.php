@@ -17,6 +17,7 @@ namespace J2Commerce\Component\J2commerce\Administrator\Helper;
 use Joomla\CMS\Access\Access;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Table\Table;
+use Joomla\CMS\User\UserHelper;
 use Joomla\Database\DatabaseInterface;
 use Joomla\Database\ParameterType;
 
@@ -200,22 +201,17 @@ final class SampleDataHelper
         ['city' => 'Sydney', 'zone_name' => 'New South Wales', 'zone_id' => 0, 'country_id' => 13, 'country_name' => 'Australia', 'zip' => '2000'],
     ];
 
+    // Ids match the statuses seeded by install.mysql.utf8.sql. Id 5 (J2COMMERCE_NEW) is the
+    // placeholder every order carries before payment, so it is never generated here: those
+    // rows are skipped by coupon and voucher counting and swept as unpaid by OrdersModel.
     private const STATUS_DISTRIBUTION = [
-        1 => 40,  // Confirmed
-        4 => 15,  // Pending
-        3 => 15,  // Processing
-        5 => 20,  // Shipped/Complete
-        6 => 5,   // Cancelled
-        7 => 5,   // Refunded
-    ];
-
-    private const STATUS_NAMES = [
-        1 => 'Confirmed',
-        3 => 'Processing',
-        4 => 'Pending',
-        5 => 'Complete',
-        6 => 'Cancelled',
-        7 => 'Refunded',
+        1 => 30,  // J2COMMERCE_CONFIRMED
+        2 => 20,  // J2COMMERCE_PROCESSED
+        7 => 20,  // J2COMMERCE_SHIPPED
+        8 => 15,  // J2COMMERCE_DELIVERED
+        4 => 10,  // J2COMMERCE_PENDING
+        6 => 3,   // J2COMMERCE_CANCELLED
+        3 => 2,   // J2COMMERCE_FAILED
     ];
 
     private const COUPONS_DATA = [
@@ -1430,7 +1426,7 @@ final class SampleDataHelper
             $user->name         = $firstName . ' ' . $lastName;
             $user->username     = $username;
             $user->email        = $email;
-            $user->password     = password_hash('SamplePass123!', PASSWORD_DEFAULT);
+            $user->password     = UserHelper::hashPassword(UserHelper::genRandomPassword(32));
             $user->block        = 0;
             $user->sendEmail    = 0;
             $user->registerDate = $now;
@@ -1514,7 +1510,7 @@ final class SampleDataHelper
         $user->name         = $name;
         $user->username     = $username;
         $user->email        = $email;
-        $user->password     = password_hash('SamplePass123!', PASSWORD_DEFAULT);
+        $user->password     = UserHelper::hashPassword(UserHelper::genRandomPassword(32));
         $user->block        = 0;
         $user->sendEmail    = 0;
         $user->registerDate = $now;
@@ -1583,7 +1579,6 @@ final class SampleDataHelper
         for ($i = 0; $i < $count; $i++) {
             $customer   = $customerIds[$i % $custCount];
             $statusId   = $statusPool[$i % \count($statusPool)];
-            $statusName = self::STATUS_NAMES[$statusId] ?? 'Pending';
 
             // Spread creation dates realistically
             $daysBack   = mt_rand(0, $dateRangeDays);
@@ -1661,7 +1656,6 @@ final class SampleDataHelper
             $order->customer_language      = 'en-GB';
             $order->customer_group         = implode(',', Access::getGroupsByUser((int) $customer['id'], false));
             $order->order_state_id         = $statusId;
-            $order->order_state            = $statusName;
             $order->order_params           = '{}';
             $order->created_on             = $createdOn;
             $order->created_by             = $customer['id'];

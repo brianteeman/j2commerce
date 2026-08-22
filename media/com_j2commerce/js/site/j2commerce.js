@@ -104,10 +104,18 @@ const J2Commerce = {
             });
             const json = await response.json();
 
-            if (!json) return;
+            if (!json) {
+                button.classList.remove('loading');
+                return;
+            }
 
             if (json.error) {
-                window.location = json.product_url;
+                if (json.product_redirect) {
+                    window.location = json.product_redirect;
+                    return;
+                }
+
+                button.classList.remove('loading');
                 return;
             }
 
@@ -123,6 +131,12 @@ const J2Commerce = {
             if (json.redirect) {
                 window.location.href = json.redirect;
                 return;
+            }
+
+            // Same unrecognised failure shape as addToCartForm() — without this the
+            // spinner keeps running on a button the shopper can still click.
+            if (!json.success) {
+                button.classList.remove('loading');
             }
         } catch (error) {
             console.error('Cart error:', error);
@@ -227,6 +241,24 @@ const J2Commerce = {
             if (json.redirect) {
                 window.location.href = json.redirect;
                 return;
+            }
+
+            // A failure that carries neither `error` nor `success` (a token mismatch, a
+            // missing cart, an unhandled product type) would otherwise leave the button
+            // stuck on its "adding" label with nothing on screen to explain why.
+            if (!json.success) {
+                if (submitBtn) {
+                    if (submitBtn.tagName === 'BUTTON') submitBtn.textContent = actionDone;
+                    else submitBtn.value = actionDone;
+                }
+
+                const notifications = form.querySelector('.j2commerce-notifications');
+                if (notifications && typeof json.message === 'string' && json.message) {
+                    const failure = document.createElement('span');
+                    failure.className = 'j2error';
+                    failure.textContent = json.message;
+                    notifications.replaceChildren(failure);
+                }
             }
         } catch (error) {
             console.error('Cart form error:', error);

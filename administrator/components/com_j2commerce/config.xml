@@ -274,6 +274,17 @@
             <option value="0">JNO</option>
             <option value="1">JYES</option>
         </field>
+
+        <field
+            name="dashboard_orderstatuses"
+            type="Orderstatus"
+            label="COM_J2COMMERCE_CONFIG_DASHBOARD_STATUSES"
+            description="COM_J2COMMERCE_CONFIG_DASHBOARD_STATUSES_DESC"
+            multiple="true"
+            default="1,2,7"
+            layout="joomla.form.field.list-fancy-select"
+        />
+
         <field
             name="spacer_misc_2"
             type="spacer"
@@ -328,6 +339,19 @@
             <option value="both">COM_J2COMMERCE_PRODUCT_SURFACE_MODE_BOTH</option>
             <option value="product">COM_J2COMMERCE_PRODUCT_SURFACE_MODE_PRODUCT</option>
             <option value="article">COM_J2COMMERCE_PRODUCT_SURFACE_MODE_ARTICLE</option>
+        </field>
+
+        <field
+            name="show_cart_item_link"
+            type="radio"
+            label="COM_J2COMMERCE_CONFIG_SHOW_CART_ITEM_LINK"
+            description="COM_J2COMMERCE_CONFIG_SHOW_CART_ITEM_LINK_DESC"
+            layout="joomla.form.field.radio.switcher"
+            default="0"
+            filter="integer"
+        >
+            <option value="0">JNO</option>
+            <option value="1">JYES</option>
         </field>
 
         <field
@@ -1282,6 +1306,18 @@
         >
             <option value="0">JNO</option>
             <option value="1">JYES</option>
+        </field>
+
+        <field
+            name="order_email_link_target"
+            type="list"
+            label="COM_J2COMMERCE_CONFIG_ORDER_EMAIL_LINK_TARGET"
+            description="COM_J2COMMERCE_CONFIG_ORDER_EMAIL_LINK_TARGET_DESC"
+            default="myprofile"
+            class="form-select"
+        >
+            <option value="myprofile">COM_J2COMMERCE_CONFIG_ORDER_EMAIL_LINK_TARGET_MYPROFILE</option>
+            <option value="confirmation">COM_J2COMMERCE_CONFIG_ORDER_EMAIL_LINK_TARGET_CONFIRMATION</option>
         </field>
 
         <field

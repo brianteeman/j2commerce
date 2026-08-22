@@ -16,6 +16,7 @@ namespace J2Commerce\Component\J2commerce\Site\Controller;
 \defined('_JEXEC') or die;
 // phpcs:enable PSR1.Files.SideEffects
 
+use J2Commerce\Component\J2commerce\Administrator\Helper\CartHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\CartOrder;
 use J2Commerce\Component\J2commerce\Administrator\Helper\ConfigHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\J2CommerceHelper;
@@ -256,7 +257,7 @@ class CartsController extends BaseController
             $this->startAjaxBuffer();
 
             if (!$this->validateAjaxToken()) {
-                $this->sendJsonResponse(['success' => false, 'message' => 'Invalid token']);
+                $this->sendJsonResponse(['success' => false, 'message' => Text::_('JINVALID_TOKEN')]);
             }
         } else {
             $this->checkToken();
@@ -289,7 +290,7 @@ class CartsController extends BaseController
             $cartUrl = $model->getCartUrl();
 
             if ($ajax) {
-                if (isset($json['success'])) {
+                if (!empty($json['success'])) {
                     if ($config->get('addtocart_action', 1) == 3) {
                         $json['redirect'] = $cartUrl;
                     }
@@ -1081,9 +1082,10 @@ class CartsController extends BaseController
             }
 
             $this->sendJsonResponse([
-                'success' => true,
-                'message' => Text::_('COM_J2COMMERCE_COUPON_APPLIED_SUCCESSFULLY'),
-                'coupon'  => $coupon,
+                'success'       => true,
+                'message'       => Text::_('COM_J2COMMERCE_COUPON_APPLIED_SUCCESSFULLY'),
+                'coupon'        => $coupon,
+                'discountLabel' => CartHelper::couponDiscountLabel($couponModel->coupon),
             ]);
         } catch (\Exception $e) {
             Log::add('carts.applyCouponAjax failed: ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');
@@ -1178,10 +1180,12 @@ class CartsController extends BaseController
                 ]);
             }
 
+            // getVoucher() carries the ledger balance the rendered form shows — the raw row holds the face value.
             $this->sendJsonResponse([
-                'success' => true,
-                'message' => Text::_('COM_J2COMMERCE_VOUCHER_APPLIED_SUCCESSFULLY'),
-                'voucher' => $voucher,
+                'success'       => true,
+                'message'       => Text::_('COM_J2COMMERCE_VOUCHER_APPLIED_SUCCESSFULLY'),
+                'voucher'       => $voucher,
+                'discountLabel' => CartHelper::voucherBalanceLabel($voucherModel->getVoucher($voucher) ?: null),
             ]);
         } catch (\Exception $e) {
             Log::add('carts.applyVoucherAjax failed: ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');

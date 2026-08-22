@@ -33,6 +33,9 @@ class OrdersModel extends ListModel
 {
     private const EXPORT_CHUNK_SIZE = 500;
 
+    /** Sentinel matching orders whose customer_language was never recorded. Mirrored in forms/filter_orders.xml. */
+    private const LANGUAGE_NOT_RECORDED = '*none*';
+
     public function __construct($config = [])
     {
         if (empty($config['filter_fields'])) {
@@ -45,6 +48,7 @@ class OrdersModel extends ListModel
                 'order_total', 'a.order_total',
                 'order_state_id', 'a.order_state_id',
                 'orderpayment_type', 'a.orderpayment_type',
+                'customer_language', 'a.customer_language',
                 'created_on', 'a.created_on',
                 'modified_on', 'a.modified_on',
                 'billing_first_name', 'oi.billing_first_name',
@@ -88,6 +92,7 @@ class OrdersModel extends ListModel
         $id .= ':' . serialize($this->getState('filter.orderstatus'));
         $paymentType = $this->getState('filter.payment_type');
         $id .= ':' . (\is_array($paymentType) ? implode(',', $paymentType) : (string) $paymentType);
+        $id .= ':' . $this->getState('filter.customer_language');
         $id .= ':' . $this->getState('filter.user_id');
         $id .= ':' . serialize($this->getState('filter.user_ids', []));
         $id .= ':' . $this->getState('filter.since');
@@ -130,6 +135,7 @@ class OrdersModel extends ListModel
             $db->quoteName('a.order_discount'),
             $db->quoteName('a.order_surcharge'),
             $db->quoteName('a.orderpayment_type'),
+            $db->quoteName('a.customer_language'),
             $db->quoteName('a.transaction_id'),
             $db->quoteName('a.transaction_status'),
             $db->quoteName('a.currency_code'),
@@ -137,7 +143,6 @@ class OrdersModel extends ListModel
             $db->quoteName('a.is_shippable'),
             $db->quoteName('a.customer_note'),
             $db->quoteName('a.order_state_id'),
-            $db->quoteName('a.order_state'),
             $db->quoteName('a.created_on'),
             $db->quoteName('a.modified_on'),
         ]);
@@ -296,6 +301,19 @@ class OrdersModel extends ListModel
                 ->bind(':paymentType', $paymentType);
         }
 
+        // Customer language filter. Orders written before a language tag was recorded
+        // hold an empty string, so the sentinel selects those rather than leaving them
+        // unreachable from the filter.
+        $customerLanguage = (string) $this->getState('filter.customer_language', '');
+        if ($customerLanguage !== '') {
+            if ($customerLanguage === self::LANGUAGE_NOT_RECORDED) {
+                $customerLanguage = '';
+            }
+
+            $query->where($db->quoteName('a.customer_language') . ' = :customerLanguage')
+                ->bind(':customerLanguage', $customerLanguage);
+        }
+
         // User ID filter
         $userId = (int) $this->getState('filter.user_id', 0);
         if ($userId > 0) {
@@ -434,7 +452,7 @@ class OrdersModel extends ListModel
                     $db->quoteName('a.order_id') . ' LIKE :search1 OR ' .
                     $db->quoteName('a.j2commerce_order_id') . ' LIKE :search2 OR ' .
                     $db->quoteName('a.user_email') . ' LIKE :search3 OR ' .
-                    $db->quoteName('a.order_state') . ' LIKE :search4 OR ' .
+                    $db->quoteName('os.orderstatus_name') . ' LIKE :search4 OR ' .
                     $db->quoteName('a.orderpayment_type') . ' LIKE :search5 OR ' .
                     'CONCAT(' . $db->quoteName('oi.billing_first_name') . ', ' . $db->quote(' ') . ', ' .
                     $db->quoteName('oi.billing_last_name') . ') LIKE :search6 OR ' .
@@ -494,6 +512,13 @@ class OrdersModel extends ListModel
             ' ON ' . $db->quoteName('a.order_id') . ' = ' . $db->quoteName('oi.order_id')
         );
 
+        // The search predicate matches the status name, so this join is required too.
+        $query->join(
+            'LEFT',
+            $db->quoteName('#__j2commerce_orderstatuses', 'os') .
+            ' ON ' . $db->quoteName('a.order_state_id') . ' = ' . $db->quoteName('os.j2commerce_orderstatus_id')
+        );
+
         $this->buildWhereClause($query);
 
         $db->setQuery($query);
@@ -522,6 +547,7 @@ class OrdersModel extends ListModel
         $this->setState('filter.nozero', 0);
         $this->setState('filter.from_invoice', 0);
         $this->setState('filter.to_invoice', 0);
+        $this->setState('filter.customer_language', '');
 
         $this->setState('filter.search', (string) ($filters['search'] ?? ''));
         $this->setState('filter.since', (string) ($filters['since'] ?? ''));
@@ -560,6 +586,13 @@ class OrdersModel extends ListModel
             'LEFT',
             $db->quoteName('#__j2commerce_orderinfos', 'oi') .
             ' ON ' . $db->quoteName('a.order_id') . ' = ' . $db->quoteName('oi.order_id')
+        );
+
+        // The search predicate matches the status name, so this join is required too.
+        $query->join(
+            'LEFT',
+            $db->quoteName('#__j2commerce_orderstatuses', 'os') .
+            ' ON ' . $db->quoteName('a.order_state_id') . ' = ' . $db->quoteName('os.j2commerce_orderstatus_id')
         );
 
         $this->buildWhereClause($query);

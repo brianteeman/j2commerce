@@ -36,6 +36,7 @@ use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\CMS\Plugin\PluginHelper;
 use Joomla\CMS\Router\Route;
 use Joomla\CMS\Session\Session;
+use Joomla\CMS\Table\Table;
 use Joomla\CMS\Uri\Uri;
 use Joomla\CMS\User\UserFactoryInterface;
 use Joomla\CMS\User\UserHelper;
@@ -122,7 +123,42 @@ class J2Commerce extends CMSPlugin implements SubscriberInterface
             'onJ2CommerceResolveCheckoutContext' => 'onResolveCheckoutContext',
             'onAjaxJ2commerce'                   => 'onAjaxJ2commerce',
             'onAfterGetMenuTypeOptions'          => 'onAfterGetMenuTypeOptions',
+            'onTableAfterReset'                  => 'onTableAfterReset',
         ];
+    }
+
+    /**
+     * Clear the literal default a reset leaves on a timestamp column.
+     *
+     * Table::reset() seeds every property from its column's declared default, so a column
+     * declared `DEFAULT CURRENT_TIMESTAMP` arrives holding that word as a string rather than
+     * a date. A reset runs before every load, and on a load that matches nothing the word is
+     * still there at store() time, where it goes into the INSERT and the server rejects it.
+     * Nothing reads the result of that store, so the row is simply never written.
+     *
+     * Clearing the property restores what a freshly constructed table already has: the column
+     * is left out of the INSERT entirely and the server applies the default itself. It also
+     * lets the `empty()` date stamping in the table classes run, which the word defeats.
+     *
+     * Matched on the value rather than a list of column names, because the columns carrying
+     * this default are not named consistently across the schema.
+     */
+    public function onTableAfterReset(Event $event): void
+    {
+        $table = $event->getArgument('subject');
+
+        if (!$table instanceof Table || !str_starts_with($table->getTableName(), '#__j2commerce')) {
+            return;
+        }
+
+        foreach (array_keys($table->getFields()) as $field) {
+            $value = $table->$field ?? null;
+
+            // MariaDB reports this as current_timestamp(); MySQL as CURRENT_TIMESTAMP.
+            if (\is_string($value) && preg_match('/^current_timestamp(\(\))?$/i', trim($value)) === 1) {
+                $table->$field = null;
+            }
+        }
     }
 
     /**
@@ -354,6 +390,16 @@ class J2Commerce extends CMSPlugin implements SubscriberInterface
             return;
         }
 
+        $lang = $app->getLanguage();
+
+        // The component installs its language into its own folder, not administrator/language,
+        // so the first load only succeeds where a translation pack happens to have written a
+        // copy there -- never for English. Fall back the way ComponentDispatcher::loadLanguage()
+        // does, otherwise COM_J2COMMERCE_* keys used by plugin manifests render as raw keys on
+        // every admin page outside the component, the Plugins manager included.
+        $lang->load('com_j2commerce', JPATH_ADMINISTRATOR)
+            || $lang->load('com_j2commerce', JPATH_ADMINISTRATOR . '/components/com_j2commerce');
+
         $registryFile = JPATH_ADMINISTRATOR . '/components/com_j2commerce/language_registry.json';
 
         if (!is_file($registryFile)) {
@@ -365,10 +411,6 @@ class J2Commerce extends CMSPlugin implements SubscriberInterface
         if (empty($extensions) || !\is_array($extensions)) {
             return;
         }
-
-        $lang = $app->getLanguage();
-
-        $lang->load('com_j2commerce', JPATH_ADMINISTRATOR);
 
         foreach ($extensions as $extension) {
             $lang->load($extension . '.sys', JPATH_ADMINISTRATOR);
@@ -1608,7 +1650,10 @@ class J2Commerce extends CMSPlugin implements SubscriberInterface
             $table = $app->bootComponent('com_menus')->getMVCFactory()->createTable('Menu', 'Administrator');
             $table->load($id);
             $table->published = 0;
-            $table->store();
+
+            if (!$table->store()) {
+                throw new \RuntimeException($table->getError());
+            }
 
             $app->enqueueMessage(Text::_('COM_J2COMMERCE_ORPHAN_MENU_UNPUBLISHED'));
         } catch (\Throwable $e) {
@@ -2465,47 +2510,68 @@ class J2Commerce extends CMSPlugin implements SubscriberInterface
         }
 
         try {
-            // variant_name contains comma-separated option value IDs
-            $optionValueIds = explode(',', $variant->variant_name);
+            // getProductVariants() aliases #__j2commerce_product_variant_optionvalues
+            // .product_optionvalue_ids to variant_name, so these are PRODUCT option
+            // value ids and have to be resolved through #__j2commerce_product_optionvalues
+            // — the same route ProductHelper::getVariantNamesByCSV() takes for the
+            // variant's display name. Reading them straight out of
+            // #__j2commerce_optionvalues is a different key space, so any row that
+            // happens to share the number answers instead.
+            $productOptionValueIds = array_values(array_unique(array_filter(
+                array_map('intval', explode(',', (string) $variant->variant_name)),
+                static fn (int $id): bool => $id > 0
+            )));
 
-            foreach ($optionValueIds as $optionValueId) {
-                $optionValueId = (int) trim($optionValueId);
+            if (empty($productOptionValueIds)) {
+                return $properties;
+            }
 
-                if ($optionValueId <= 0) {
+            $db    = $this->getDatabase();
+            $query = $db->getQuery(true)
+                ->select([
+                    $db->quoteName('pov.j2commerce_product_optionvalue_id'),
+                    $db->quoteName('o.option_unique_name'),
+                    $db->quoteName('ov.optionvalue_name'),
+                ])
+                ->from($db->quoteName('#__j2commerce_product_optionvalues', 'pov'))
+                ->join(
+                    'INNER',
+                    $db->quoteName('#__j2commerce_optionvalues', 'ov')
+                    . ' ON ' . $db->quoteName('pov.optionvalue_id') . ' = ' . $db->quoteName('ov.j2commerce_optionvalue_id')
+                )
+                ->join(
+                    'INNER',
+                    $db->quoteName('#__j2commerce_options', 'o')
+                    . ' ON ' . $db->quoteName('ov.option_id') . ' = ' . $db->quoteName('o.j2commerce_option_id')
+                )
+                ->whereIn($db->quoteName('pov.j2commerce_product_optionvalue_id'), $productOptionValueIds);
+
+            $db->setQuery($query);
+
+            $rows = $db->loadObjectList('j2commerce_product_optionvalue_id') ?: [];
+
+            // Walk the CSV, not the result set: where two of a variant's options map
+            // to the same schema property, the id listed last still wins, exactly as
+            // it did when this ran a query per id. An unordered result set would
+            // otherwise decide that.
+            foreach ($productOptionValueIds as $productOptionValueId) {
+                $result = $rows[$productOptionValueId] ?? null;
+
+                if ($result === null || empty($result->option_unique_name) || empty($result->optionvalue_name)) {
                     continue;
                 }
 
-                // Get option value details
-                $db    = $this->getDatabase();
-                $query = $db->getQuery(true)
-                    ->select([
-                        $db->quoteName('o.option_unique_name'),
-                        $db->quoteName('ov.optionvalue_name'),
-                    ])
-                    ->from($db->quoteName('#__j2commerce_optionvalues', 'ov'))
-                    ->join(
-                        'LEFT',
-                        $db->quoteName('#__j2commerce_options', 'o')
-                        . ' ON ' . $db->quoteName('ov.option_id') . ' = ' . $db->quoteName('o.j2commerce_option_id')
-                    )
-                    ->where($db->quoteName('ov.j2commerce_optionvalue_id') . ' = ' . $optionValueId);
+                // Map common option names to schema.org properties
+                $optionName = strtolower($result->option_unique_name);
 
-                $db->setQuery($query);
-                $result = $db->loadObject();
-
-                if ($result && !empty($result->option_unique_name) && !empty($result->optionvalue_name)) {
-                    // Map common option names to schema.org properties
-                    $optionName = strtolower($result->option_unique_name);
-
-                    if (strpos($optionName, 'size') !== false) {
-                        $properties['size'] = $result->optionvalue_name;
-                    } elseif (strpos($optionName, 'color') !== false || strpos($optionName, 'colour') !== false) {
-                        $properties['color'] = $result->optionvalue_name;
-                    } elseif (strpos($optionName, 'material') !== false) {
-                        $properties['material'] = $result->optionvalue_name;
-                    } elseif (strpos($optionName, 'pattern') !== false) {
-                        $properties['pattern'] = $result->optionvalue_name;
-                    }
+                if (strpos($optionName, 'size') !== false) {
+                    $properties['size'] = $result->optionvalue_name;
+                } elseif (strpos($optionName, 'color') !== false || strpos($optionName, 'colour') !== false) {
+                    $properties['color'] = $result->optionvalue_name;
+                } elseif (strpos($optionName, 'material') !== false) {
+                    $properties['material'] = $result->optionvalue_name;
+                } elseif (strpos($optionName, 'pattern') !== false) {
+                    $properties['pattern'] = $result->optionvalue_name;
                 }
             }
         } catch (\Exception $e) {

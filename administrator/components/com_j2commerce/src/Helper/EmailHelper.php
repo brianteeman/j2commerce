@@ -533,7 +533,7 @@ class EmailHelper
         }
 
         // HTML body sink — opt in to tag encoding.
-        $templateText = $this->processTags($templateText, $order, $extras, $receiverType, true, $language);
+        $templateText = $this->processTags($templateText, $order, $extras, $receiverType, true, $language, true);
         // The subject is a plain-text header — entity encoding would be shown literally.
         $subject      = $this->processTags($template->subject ?? '', $order, $extras, $receiverType, false, $language);
 
@@ -587,6 +587,27 @@ class EmailHelper
     }
 
     /**
+     * processTags() for a caller whose result becomes an HTML body.
+     *
+     * Same processing, with $escapeHtml already set. That flag cannot default to true --
+     * a caller rendering a mail SUBJECT wants the unencoded form, and several do -- so the
+     * safe path for an HTML sink is this name rather than remembering a fifth argument.
+     * Prefer this over processTags(..., true) in new code.
+     *
+     * @since 6.6.0
+     */
+    public function processTagsForHtml(
+        string $text,
+        object $order,
+        array $extras = [],
+        string $receiverType = '*',
+        ?Language $language = null,
+        bool $appendDownloadLinks = false
+    ): string {
+        return $this->processTags($text, $order, $extras, $receiverType, true, $language, $appendDownloadLinks);
+    }
+
+    /**
      * Process template tags and replace with order data
      *
      * @param   string               $text          The template text
@@ -600,18 +621,34 @@ class EmailHelper
      *                                              build mail SUBJECTS, where entity encoding
      *                                              would be shown literally in the inbox —
      *                                              keep their current output. Every core
-     *                                              HTML sink opts in explicitly.
+     *                                              HTML sink opts in explicitly. Encoding is all
+     *                                              this flag decides.
      * @param   Language|null        $language      Locale this copy is rendered in. Defaults to
      *                                              the order's own, which is what every
      *                                              customer-facing sink wants; the admin copy
      *                                              passes the recipient's admin language.
+     * @param   bool                 $appendDownloadLinks  True for a mail body, whose template may
+     *                                              predate [DOWNLOAD_LINKS] and so carry no
+     *                                              placeholder for it. Defaults to false: an
+     *                                              invoice, a packing slip and an admin preview
+     *                                              all render the same order without being a
+     *                                              delivery mechanism for its files, and each
+     *                                              template says for itself whether it wants the
+     *                                              block by carrying the tag.
      *
      * @return  string  The processed text
      *
      * @since   6.0.0
      */
-    public function processTags(string $text, object $order, array $extras = [], string $receiverType = '*', bool $escapeHtml = false, ?Language $language = null): string
-    {
+    public function processTags(
+        string $text,
+        object $order,
+        array $extras = [],
+        string $receiverType = '*',
+        bool $escapeHtml = false,
+        ?Language $language = null,
+        bool $appendDownloadLinks = false
+    ): string {
         $params    = ComponentHelper::getParams('com_j2commerce');
         $config    = Factory::getApplication()->getConfig();
         $sitename  = $config->get('sitename');
@@ -634,16 +671,29 @@ class EmailHelper
         );
 
         // Guest order URL — deep link that pre-seeds the guest session via order_token + order_email
-        $orderToken    = (string) ($order->token ?? '');
-        $orderEmail    = (string) ($order->user_email ?? '');
+        $orderToken     = (string) ($order->token ?? '');
+        $orderEmail     = (string) ($order->user_email ?? '');
+        $guestOrderPath = 'index.php?option=com_j2commerce&view=myprofile&layout=order';
+
+        // The confirmation target routes through a handler that seeds the same guest session the
+        // My Profile form would, so session-gated controls (downloads, easylinks) keep working.
+        if ($params->get('order_email_link_target', 'myprofile') === 'confirmation') {
+            $guestOrderPath = 'index.php?option=com_j2commerce&task=myprofile.guestOrderLink';
+        }
+
         $guestOrderURL = $this->buildSiteUrl(
-            'index.php?option=com_j2commerce&view=myprofile&layout=order'
+            $guestOrderPath
                 . '&order_id=' . urlencode((string) $orderId)
                 . '&order_token=' . urlencode($orderToken)
                 . '&order_email=' . urlencode($orderEmail),
             $siteRoot,
             $subpathURL
         );
+
+        // The order token and the address it is paired with are what MyprofileController::validateOrderAccess()
+        // accepts in place of a session, so every tag carrying that pair answers to one rule rather than to
+        // whichever tag the template happened to use. [DOWNLOAD_LINKS] below already states it.
+        $isAdminCopy = $receiverType === 'admin';
 
         // Bare myprofile URL — landing page with guest-login form
         $myprofileURL = $this->buildSiteUrl(
@@ -730,8 +780,8 @@ class EmailHelper
         $extraRowsHtml  = '';
         foreach ($orderExtraRows as $extraRow) {
             $extraRowsHtml .= '<div class="j2c-order-extra-row"><strong>'
-                . htmlspecialchars((string) $extraRow['label'], ENT_QUOTES, 'UTF-8') . ':</strong> '
-                . htmlspecialchars((string) $extraRow['value'], ENT_QUOTES, 'UTF-8') . '</div>';
+                . self::encodeTagDelimiters(htmlspecialchars((string) $extraRow['label'], ENT_QUOTES, 'UTF-8')) . ':</strong> '
+                . self::encodeTagDelimiters(htmlspecialchars((string) $extraRow['value'], ENT_QUOTES, 'UTF-8')) . '</div>';
         }
 
         $tags = [
@@ -773,12 +823,12 @@ class EmailHelper
             '[SHIPPING_METHOD]'           => $language->_($shipping->ordershipping_name ?? ''),
             '[SHIPPING_TYPE]'             => $language->_($shipping->ordershipping_name ?? ''),
             '[SHIPPING_TRACKING_ID]'      => $shipping->ordershipping_tracking_id ?? '',
-            '[CUSTOMER_NOTE]'             => nl2br(htmlspecialchars((string) ($order->customer_note ?? ''), ENT_QUOTES, 'UTF-8')),
+            '[CUSTOMER_NOTE]'             => self::encodeTagDelimiters(nl2br(htmlspecialchars((string) ($order->customer_note ?? ''), ENT_QUOTES, 'UTF-8'))),
             '[PAYMENT_TYPE]'              => $this->getPaymentMethodTitle($order->orderpayment_type ?? '', $language),
-            '[ORDER_TOKEN]'               => $order->token ?? '',
-            '[TOKEN]'                     => $order->token ?? '',
+            '[ORDER_TOKEN]'               => $isAdminCopy ? '' : $orderToken,
+            '[TOKEN]'                     => $isAdminCopy ? '' : $orderToken,
             '[MYPROFILE_URL]'             => $myprofileURL,
-            '[GUEST_ORDER_URL]'           => $guestOrderURL,
+            '[GUEST_ORDER_URL]'           => $isAdminCopy ? $invoiceURL : $guestOrderURL,
             '[COUPON_CODE]'               => $couponCode,
             '[DISCOUNT_LABEL]'            => $language->_($discountLabel),
             '[BANK_TRANSFER_INFORMATION]' => $bankTransferInfo,
@@ -841,18 +891,18 @@ class EmailHelper
         $tags['[TAX_LINES]'] = $this->buildTaxLines($order, $language);
 
         // Download links for the order's digital files
-        $downloadLinks           = $receiverType === 'admin'
+        $downloadLinks           = $isAdminCopy
             ? ''
             : $this->buildDownloadLinks($order, $siteRoot, $subpathURL, $language);
         $tags['[DOWNLOAD_LINKS]'] = $downloadLinks;
 
         // Templates saved before this tag existed carry no placeholder for it, so a store that
         // sells downloads would still mail an order with no way to reach the files. Append the
-        // block only when the template did not place it itself, and only into an HTML body.
+        // block only when the caller asked for it and the template did not place it itself.
         // Case-insensitive, and curly braces too: both forms are normalised to the canonical
         // tag further down, so testing only the canonical spelling here would append a second
         // copy to a template that does carry the tag.
-        $appendDownloadLinks = $escapeHtml
+        $appendDownloadLinks = $appendDownloadLinks
             && $downloadLinks !== ''
             && !preg_match('/[\[{]DOWNLOAD_LINKS[\]}]/i', $text);
 
@@ -860,13 +910,19 @@ class EmailHelper
         $tags['[DISCOUNT_LINES]'] = $this->buildDiscountLines($order, $discountRows, $language);
 
         // Encode every tag value that is not deliberately HTML; a tag added later is escaped by default.
+        // The delimiters go with it: htmlspecialchars() leaves [ and ] alone, and the replacement
+        // loop below plus processCustomFields(), processPositionalHooks() and the unmatched-tag
+        // sweep all read them, so a value carrying either one would be read as template syntax by
+        // whichever pass reached it next. Encoded, it still displays as typed.
         if ($escapeHtml) {
             foreach ($tags as $tagKey => $tagValue) {
                 if (\in_array($tagKey, self::RAW_HTML_TAGS, true) || !\is_scalar($tagValue)) {
                     continue;
                 }
 
-                $tags[$tagKey] = htmlspecialchars((string) $tagValue, ENT_QUOTES, 'UTF-8');
+                $tags[$tagKey] = self::encodeTagDelimiters(
+                    htmlspecialchars((string) $tagValue, ENT_QUOTES, 'UTF-8')
+                );
             }
         }
 
@@ -1089,8 +1145,8 @@ class EmailHelper
                         : '';
 
                     $itemTags = [
-                        '[ITEM_NAME]'        => htmlspecialchars($item->orderitem_name ?? ''),
-                        '[ITEM_SKU]'         => htmlspecialchars($item->orderitem_sku ?? ''),
+                        '[ITEM_NAME]'        => self::encodeTagDelimiters(htmlspecialchars($item->orderitem_name ?? '')),
+                        '[ITEM_SKU]'         => self::encodeTagDelimiters(htmlspecialchars($item->orderitem_sku ?? '')),
                         '[ITEM_QTY]'         => (string) (int) ($item->orderitem_quantity ?? 0),
                         '[ITEM_PRICE]'       => CurrencyHelper::format((float) ($item->orderitem_price ?? 0), $currencyCode, $currencyValue),
                         '[ITEM_TOTAL]'       => CurrencyHelper::format((float) ($item->orderitem_finalprice ?? 0), $currencyCode, $currencyValue),
@@ -1248,7 +1304,7 @@ class EmailHelper
             if ((float) $tax->ordertax_amount <= 0) {
                 continue;
             }
-            $title   = htmlspecialchars($tax->ordertax_title);
+            $title   = self::encodeTagDelimiters(htmlspecialchars($tax->ordertax_title));
             $percent = (float) $tax->ordertax_percent;
             $label   = $title . ($percent > 0 ? ' (' . rtrim(rtrim(number_format($percent, 2), '0'), '.') . '%)' : '');
             $rows .= $line($label, (float) $tax->ordertax_amount);
@@ -1293,7 +1349,7 @@ class EmailHelper
             $label  = $label === '' ? $language->_('COM_J2COMMERCE_CART_DISCOUNT') : $language->_($label);
 
             $rows .= '<tr>'
-                . '<td style="padding: 6px 20px; font-size: 13px; color: #059669;">' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</td>'
+                . '<td style="padding: 6px 20px; font-size: 13px; color: #059669;">' . self::encodeTagDelimiters(htmlspecialchars($label, ENT_QUOTES, 'UTF-8')) . '</td>'
                 . '<td style="padding: 6px 20px; font-size: 13px; color: #059669; text-align: right;">-'
                 . htmlspecialchars(CurrencyHelper::format($amount, $currencyCode, $currencyValue), ENT_QUOTES, 'UTF-8') . '</td>'
                 . '</tr>';
@@ -1339,7 +1395,7 @@ class EmailHelper
 
             $rows .= '<tr>'
                 . '<td style="padding: 6px 20px; font-size: 13px;">'
-                . htmlspecialchars($name, ENT_QUOTES, 'UTF-8')
+                . self::encodeTagDelimiters(htmlspecialchars($name, ENT_QUOTES, 'UTF-8'))
                 . '</td>'
                 . '<td style="padding: 6px 20px; font-size: 13px; text-align: right;">'
                 . '<a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '">'
@@ -1558,8 +1614,8 @@ class EmailHelper
     private function totalsRow(string $label, string $value): string
     {
         return '<tr>'
-            . '<td style="padding:8px; border:1px solid #ddd;">' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</td>'
-            . '<td style="padding:8px; border:1px solid #ddd; text-align:right;">' . htmlspecialchars($value, ENT_QUOTES, 'UTF-8') . '</td>'
+            . '<td style="padding:8px; border:1px solid #ddd;">' . self::encodeTagDelimiters(htmlspecialchars($label, ENT_QUOTES, 'UTF-8')) . '</td>'
+            . '<td style="padding:8px; border:1px solid #ddd; text-align:right;">' . self::encodeTagDelimiters(htmlspecialchars($value, ENT_QUOTES, 'UTF-8')) . '</td>'
             . '</tr>';
     }
 
@@ -1800,7 +1856,7 @@ class EmailHelper
         $this->loadLanguageOverrides($order);
 
         $extras       = [];
-        $templateText = $this->processTags($templateText, $order, $extras, '*', true);
+        $templateText = $this->processTags($templateText, $order, $extras, '*', true, null, true);
         $subject      = $this->processTags($subject, $order, $extras, '*', false);
 
         $baseURL = str_replace('/administrator', '', Uri::base());
@@ -2024,7 +2080,8 @@ class EmailHelper
 
         foreach ($tags as $langTag) {
             foreach ([JPATH_ADMINISTRATOR, JPATH_SITE] as $basePath) {
-                $jlang->load($extension, $basePath, $langTag, true);
+                $jlang->load($extension, $basePath, $langTag, true)
+                    || $jlang->load($extension, $basePath . '/components/' . $extension, $langTag, true);
                 $jlang->load($extension . '.override', $basePath, $langTag, true);
             }
         }
@@ -2288,23 +2345,20 @@ class EmailHelper
             $customFields = $this->getDecodedFields($row->$field);
 
             if (!empty($customFields)) {
+                $definitions = $this->getCustomFieldDefinitions($type);
+
                 foreach ($customFields as $namekey => $fieldData) {
                     if (
                         !property_exists($row, $type . '_' . $namekey)
                         && !property_exists($row, 'user_' . $namekey)
                         && !\in_array($namekey, ['country_id', 'zone_id', 'option', 'task', 'view'])
                     ) {
-                        if (\is_array($fieldData['value'] ?? null)) {
-                            $fieldData['value'] = implode(',', $fieldData['value']);
+                        if (!\is_array($fieldData)) {
+                            $fieldData = $this->describeCustomField((string) $namekey, $fieldData, $definitions);
                         }
 
-                        if (isset($fieldData['value'])) {
-                            // Shopper-entered checkout field values, landing in the same
-                            // invoice / packing-slip / admin-order sink as the tag map —
-                            // encode before nl2br(), exactly as [CUSTOMER_NOTE] does.
-                            $fieldData['value'] = nl2br(
-                                htmlspecialchars((string) $fieldData['value'], ENT_QUOTES, 'UTF-8')
-                            );
+                        if (\is_array($fieldData['value'] ?? null)) {
+                            $fieldData['value'] = implode(',', $fieldData['value']);
                         }
 
                         $fields[$namekey] = $fieldData;
@@ -2330,45 +2384,112 @@ class EmailHelper
 
                 if (\is_array($value)) {
                     foreach ($value as $val) {
-                        $string .= '-' . $language->_($val) . '\n';
+                        $string .= '-' . $this->renderCustomFieldValue($language, $val) . '\n';
                     }
                 } elseif (\is_object($value)) {
                     $objArray = (array) $value;
                     $string .= '\n';
 
                     foreach ($objArray as $val) {
-                        $string .= '- ' . $language->_($val) . '\n';
+                        $string .= '- ' . $this->renderCustomFieldValue($language, $val) . '\n';
                     }
                 } elseif (\is_string($value) && $this->isJson(stripcslashes($value))) {
                     $jsonValues = json_decode(stripcslashes($value));
 
                     if (\is_array($jsonValues)) {
                         foreach ($jsonValues as $val) {
-                            $string .= '-' . $language->_($val) . '\n';
+                            $string .= '-' . $this->renderCustomFieldValue($language, $val) . '\n';
                         }
                     } else {
-                        $string .= $language->_($value);
+                        $string .= $this->renderCustomFieldValue($language, $value);
                     }
                 } else {
-                    $string = $language->_((string) $value);
+                    $string = $this->renderCustomFieldValue($language, $value);
                 }
 
                 // Handle zone/country type fields
                 if (isset($fieldData['zone_type']) && !empty($value)) {
                     if ($fieldData['zone_type'] === 'zone') {
-                        $string = $language->_($this->getZoneName((int) $value));
+                        $string = $this->renderCustomFieldValue($language, $this->getZoneName((int) $value));
                     } elseif ($fieldData['zone_type'] === 'country') {
-                        $string = $language->_($this->getCountryName((int) $value));
+                        $string = $this->renderCustomFieldValue($language, $this->getCountryName((int) $value));
                     }
                 }
 
-                $formattedValue = $language->_($fieldData['label'] ?? '') . ' : ' . $string;
-                $tagValue       = '[CUSTOM_' . strtoupper($type) . '_FIELD:' . strtoupper($namekey) . ']';
+                $formattedValue = $this->renderCustomFieldValue($language, $fieldData['label'] ?? '')
+                    . ' : ' . $string;
+                $tagValue       = '[CUSTOM_' . strtoupper($type) . '_FIELD:' . strtoupper((string) $namekey) . ']';
                 $text           = str_replace($tagValue, $formattedValue, $text);
             }
         }
 
         return $text;
+    }
+
+    /**
+     * Encodes the tag delimiters in an already-escaped value. htmlspecialchars() leaves [ and ]
+     * alone, and every pass that runs after a value is in $text reads them, so a value carrying
+     * either one would be taken for template syntax. Encoded, it still displays as typed.
+     */
+    private static function encodeTagDelimiters(string $value): string
+    {
+        return str_replace(['[', ']'], ['&#91;', '&#93;'], $value);
+    }
+
+    /**
+     * Translates one stored value and encodes it as it is emitted. The JSON branch
+     * of the render loop runs stripcslashes(), which undoes an encode applied
+     * before it, so emission is the only point where the encode holds. It does not
+     * take the caller's escapeHtml flag: callers that render an HTML body without
+     * passing one would otherwise receive these values unencoded.
+     */
+    private function renderCustomFieldValue(Language $language, mixed $value): string
+    {
+        if (!\is_scalar($value) && $value !== null) {
+            return '';
+        }
+
+        // Same delimiter encode the tag map applies, for the same reason: this renderer emits
+        // into $text after the tag loop but before the hook pass and the unmatched-tag sweep.
+        return self::encodeTagDelimiters(
+            nl2br(htmlspecialchars($language->_((string) $value), ENT_QUOTES, 'UTF-8'))
+        );
+    }
+
+    /** Keyed by field_namekey so a stored value can be paired with its label. */
+    private function getCustomFieldDefinitions(string $area): array
+    {
+        $definitions = [];
+
+        foreach (CustomFieldHelper::getFieldsByArea($area) as $definition) {
+            $definitions[$definition->field_namekey] = $definition;
+        }
+
+        return $definitions;
+    }
+
+    /**
+     * all_billing/all_shipping/all_payment hold a flat namekey => value map, while
+     * the tag renderer and the onJ2CommerceBeforeReplaceCustomFields event both
+     * expect a value/label pair.
+     */
+    private function describeCustomField(string $namekey, mixed $value, array $definitions): array
+    {
+        $definition = $definitions[$namekey] ?? null;
+        $entry      = [
+            'value' => $value,
+            'label' => $definition->field_name ?? $namekey,
+        ];
+
+        if (($definition->field_type ?? '') === 'zone') {
+            $options = json_decode((string) ($definition->field_options ?? ''), true);
+
+            if (\is_array($options) && !empty($options['zone_type'])) {
+                $entry['zone_type'] = $options['zone_type'];
+            }
+        }
+
+        return $entry;
     }
 
     /**
@@ -2745,7 +2866,12 @@ class EmailHelper
         $language = Language::getInstance($tag, (bool) Factory::getApplication()->getConfig()->get('debug_lang'));
 
         foreach ([JPATH_ADMINISTRATOR, JPATH_SITE] as $basePath) {
-            $language->load('com_j2commerce', $basePath);
+            // The mirror under {basePath}/language/{tag} is written at install time and may be
+            // absent, so fall back to the component's own language dir exactly as
+            // ComponentDispatcher::loadLanguage() does. Without this the email-only keys, which
+            // live solely in the admin component dir, resolve to their raw key names.
+            $language->load('com_j2commerce', $basePath)
+                || $language->load('com_j2commerce', $basePath . '/components/com_j2commerce');
             $language->load('com_j2commerce.override', $basePath);
         }
 
@@ -2796,7 +2922,7 @@ class EmailHelper
         foreach ($items as $item) {
             $html .= '<tr>';
             $html .= '<td style="padding:8px; border:1px solid #ddd;">';
-            $html .= htmlspecialchars($item->orderitem_name ?? '');
+            $html .= self::encodeTagDelimiters(htmlspecialchars($item->orderitem_name ?? ''));
 
             $optionText = $this->decodeOrderItemAttributes($item->orderitem_attributes ?? '');
 
@@ -2805,7 +2931,7 @@ class EmailHelper
             }
 
             $html .= '</td>';
-            $html .= '<td style="padding:8px; border:1px solid #ddd;">' . htmlspecialchars($item->orderitem_sku ?? '') . '</td>';
+            $html .= '<td style="padding:8px; border:1px solid #ddd;">' . self::encodeTagDelimiters(htmlspecialchars($item->orderitem_sku ?? '')) . '</td>';
             $html .= '<td style="padding:8px; text-align:center; border:1px solid #ddd;">' . (int) ($item->orderitem_quantity ?? 0) . '</td>';
             $html .= '<td style="padding:8px; text-align:center; border:1px solid #ddd;">' . (float) ($item->orderitem_weight ?? 0) . '</td>';
             $html .= '</tr>';
@@ -2863,13 +2989,13 @@ class EmailHelper
             $html .= '<td style="padding:8px; border:1px solid #ddd;">';
 
             if (!empty($imageUrl)) {
-                $html .= '<img src="' . htmlspecialchars($imageUrl) . '" alt="' . htmlspecialchars($item->orderitem_name ?? '') . '" width="50" height="50" style="border-radius:4px; object-fit:cover; margin-right:8px; vertical-align:middle;" />';
+                $html .= '<img src="' . htmlspecialchars($imageUrl) . '" alt="' . self::encodeTagDelimiters(htmlspecialchars($item->orderitem_name ?? '')) . '" width="50" height="50" style="border-radius:4px; object-fit:cover; margin-right:8px; vertical-align:middle;" />';
             }
 
-            $html .= htmlspecialchars($item->orderitem_name ?? '');
+            $html .= self::encodeTagDelimiters(htmlspecialchars($item->orderitem_name ?? ''));
 
             if (!empty($item->orderitem_sku)) {
-                $html .= '<br><small>' . $language->_('COM_J2COMMERCE_EMAIL_SKU') . ': ' . htmlspecialchars($item->orderitem_sku) . '</small>';
+                $html .= '<br><small>' . $language->_('COM_J2COMMERCE_EMAIL_SKU') . ': ' . self::encodeTagDelimiters(htmlspecialchars($item->orderitem_sku)) . '</small>';
             }
 
             $html .= '</td>';
