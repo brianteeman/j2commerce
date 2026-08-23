@@ -304,6 +304,14 @@ class MultiimageuploaderController extends BaseController
             return;
         }
 
+        // Hold the removable set to the addable set — upload() accepts nothing outside these two allowlists.
+        $extension = strtolower(File::getExt(basename($path)));
+
+        if (!\in_array($extension, self::IMAGE_ALLOWLIST, true) && !\in_array($extension, self::FILE_ALLOWLIST, true)) {
+            $this->sendJson(false, 'File type not allowed');
+            return;
+        }
+
         $dir       = \dirname($path);
         $fileName  = basename($path);
         $nameNoExt = File::stripExt($fileName);
@@ -773,7 +781,7 @@ class MultiimageuploaderController extends BaseController
             return false;
         }
 
-        $normalizedRoot = rtrim(str_replace('\\', '/', JPATH_ROOT), '/');
+        $normalizedRoot = rtrim(str_replace('\\', '/', JPATH_ROOT), '/') . '/';
         $normalizedPath = str_replace('\\', '/', $realPath);
 
         return str_starts_with($normalizedPath, $normalizedRoot);

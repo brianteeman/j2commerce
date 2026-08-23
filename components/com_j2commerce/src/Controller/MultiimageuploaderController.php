@@ -314,6 +314,14 @@ class MultiimageuploaderController extends BaseController
             return;
         }
 
+        // Hold the removable set to the addable set — upload() accepts nothing outside these two allowlists.
+        $extension = strtolower(File::getExt(basename($path)));
+
+        if (!\in_array($extension, self::IMAGE_ALLOWLIST, true) && !\in_array($extension, self::FILE_ALLOWLIST, true)) {
+            $this->sendJson(false, 'File type not allowed');
+            return;
+        }
+
         $dir       = \dirname($path);
         $fileName  = basename($path);
         $nameNoExt = File::stripExt($fileName);
@@ -549,12 +557,11 @@ class MultiimageuploaderController extends BaseController
     // -------------------------------------------------------------------------
 
     /**
-     * Site ACL gate: CSRF + logged-in check + one of three authorized user types.
+     * Site ACL gate: CSRF + logged-in check + one of two authorized user types.
      *
      * Allowed:
-     *  1. Any user with core.edit on com_j2commerce (admin editing from frontend)
+     *  1. Any user with core.edit or core.create on com_j2commerce (same pair as the admin twin)
      *  2. Active vendor users (row in #__j2commerce_vendors with enabled=1)
-     *  3. Article authors with core.edit or core.edit.own on com_content
      */
     private function authorize(): bool
     {
@@ -570,15 +577,11 @@ class MultiimageuploaderController extends BaseController
             return false;
         }
 
-        if ($user->authorise('core.edit', 'com_j2commerce')) {
+        if ($user->authorise('core.edit', 'com_j2commerce') || $user->authorise('core.create', 'com_j2commerce')) {
             return true;
         }
 
         if ($this->isVendorUser((int) $user->id)) {
-            return true;
-        }
-
-        if ($user->authorise('core.edit', 'com_content') || $user->authorise('core.edit.own', 'com_content')) {
             return true;
         }
 
@@ -819,7 +822,7 @@ class MultiimageuploaderController extends BaseController
             return false;
         }
 
-        $normalizedRoot = rtrim(str_replace('\\', '/', JPATH_ROOT), '/');
+        $normalizedRoot = rtrim(str_replace('\\', '/', JPATH_ROOT), '/') . '/';
         $normalizedPath = str_replace('\\', '/', $realPath);
 
         return str_starts_with($normalizedPath, $normalizedRoot);
