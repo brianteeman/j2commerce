@@ -797,6 +797,14 @@ class Flexivariable
                 }
             }
 
+            $productHelper->getQuantityRestriction($product->variant);
+
+            // Promote to product top-level so displayQuantity() can read them
+            if (!empty($product->variant->quantity_restriction)) {
+                $product->min_sale_qty = (float) ($product->variant->min_sale_qty ?? 0);
+                $product->max_sale_qty = (float) ($product->variant->max_sale_qty ?? 0);
+            }
+
             if ($product->variant->quantity_restriction && $product->variant->min_sale_qty > 0) {
                 $product->quantity = $product->variant->min_sale_qty;
             }
@@ -1079,6 +1087,8 @@ class Flexivariable
         $return['sku']             = $variant->sku;
         $return['upc']             = $variant->upc ?? '';
         $return['quantity']        = (float) $quantity;
+        $return['min_sale_qty']    = $variant->quantity_restriction ? (float) ($variant->min_sale_qty ?? 0) : 0;
+        $return['max_sale_qty']    = $variant->quantity_restriction ? (float) ($variant->max_sale_qty ?? 0) : 0;
         $return['price']           = $variant->price;
         $return['availability']    = $variant->availability;
         $return['manage_stock']    = $variant->manage_stock;

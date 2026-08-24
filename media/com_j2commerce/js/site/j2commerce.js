@@ -111,11 +111,14 @@ const J2Commerce = {
             }
 
             if (json.error) {
-                if (json.product_redirect) {
-                    window.location = json.product_redirect;
-                    return;
+                const errorMsg = json.error.stock || json.error.general || json.error.product
+                    || (typeof json.error === 'string' ? json.error : '');
+                if (errorMsg) {
+                    if (typeof Joomla !== 'undefined' && Joomla.renderMessages) {
+                        Joomla.renderMessages({ error: [errorMsg] });
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
                 }
-
                 button.classList.remove('loading');
                 return;
             }
@@ -979,6 +982,22 @@ const J2Commerce = {
                 if (['variable', 'advancedvariable', 'variablesubscriptionproduct'].includes(productType)) {
                     qtyInput.setAttribute('value', response.quantity);
                 }
+
+                // Update min/max constraints when the selected variant changes.
+                // Note: gated on response.quantity because PHP always sends all three together.
+                if (response.min_sale_qty !== undefined) {
+                    const minQty = parseInt(response.min_sale_qty, 10) || 1;
+                    qtyInput.setAttribute('min', minQty);
+                }
+                if (response.max_sale_qty !== undefined) {
+                    const maxQty = parseInt(response.max_sale_qty, 10) || 0;
+                    if (maxQty > 0) {
+                        qtyInput.setAttribute('max', maxQty);
+                    } else {
+                        qtyInput.removeAttribute('max');
+                    }
+                }
+
                 this.updateCountInputStates(qtyInput);
             }
         }
