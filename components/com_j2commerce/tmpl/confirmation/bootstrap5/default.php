@@ -322,6 +322,27 @@ if ($info) {
                         </div>
                     <?php endif; ?>
 
+                    <?php // Customer note card ?>
+                    <?php if ((int) J2CommerceHelper::config()->get('show_customer_note', 1) === 1 && trim((string) ($order->customer_note ?? '')) !== '') : ?>
+                        <div class="j2c-block-customer-note card mb-4">
+                            <div class="card-body">
+                                <h3 class="h6 mb-3"><?php echo Text::_('COM_J2COMMERCE_CHECKOUT_CUSTOMER_NOTE'); ?></h3>
+                                <p class="mb-0 small"><?php echo nl2br($this->escape($order->customer_note)); ?></p>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php // Payment instructions: merchant-authored, so not gated on the customer-note option ?>
+                    <?php $paymentInstructions = J2CommerceHelper::getPaymentInstructions($order); ?>
+                    <?php if ($paymentInstructions !== '') : ?>
+                        <div class="j2c-block-payment-instructions card mb-4">
+                            <div class="card-body">
+                                <h3 class="h6 mb-3"><?php echo Text::_('COM_J2COMMERCE_PAYMENT_INSTRUCTIONS'); ?></h3>
+                                <div class="mb-0 small"><?php echo $paymentInstructions; ?></div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
                     <?php // Shipping method card ?>
                     <?php if ((int) $order->is_shippable && !empty($shippings)) : ?>
                         <div class="j2c-block-shipping-method card mb-4">

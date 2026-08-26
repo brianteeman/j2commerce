@@ -58,9 +58,11 @@ class CronlasthitField extends FormField
         } elseif ($this->isJson($cronHit)) {
             $data = json_decode($cronHit);
 
-            $date    = $data->date ?? '';
-            $url     = $data->url ?? '';
-            $ip      = $data->ip ?? '';
+            $esc = static fn ($v): string => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
+
+            $date    = $esc($data->date ?? '');
+            $url     = $esc($data->url ?? '');
+            $ip      = $esc($data->ip ?? '');
             $success = $data->success ?? false;
 
             $note  = Text::sprintf('COM_J2COMMERCE_CRON_LAST_TRIGGER_DETAILS', $date, $url, $ip);
@@ -71,12 +73,16 @@ class CronlasthitField extends FormField
             $class = 'alert-info';
         }
 
+        // Round-trip the stored value: the Options form would otherwise post an empty
+        // string for this parameter and wipe the record on every save.
+        $cronHitEsc = htmlspecialchars($cronHit, ENT_QUOTES, 'UTF-8');
+
         // Build the HTML output
         $html = <<<HTML
 <div class="alert {$class} mt-n3 mb-0">
     <strong>{$note}</strong>
 </div>
-<input type="hidden" name="{$this->name}" id="{$this->id}" value=""/>
+<input type="hidden" name="{$this->name}" id="{$this->id}" value="{$cronHitEsc}"/>
 HTML;
 
         return $html;

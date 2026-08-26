@@ -14,11 +14,13 @@ namespace J2Commerce\Component\J2commerce\Administrator\Field;
 
 \defined('_JEXEC') or die;
 
+use J2Commerce\Component\J2commerce\Administrator\Helper\ComponentParamsHelper;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Form\FormField;
 use Joomla\CMS\Language\Text;
-use Joomla\Database\DatabaseInterface;
+use Joomla\CMS\Log\Log;
+use Joomla\Registry\Registry;
 
 /**
  * Queue Key field - displays the queue key with a regenerate button.
@@ -39,6 +41,13 @@ class QueuekeyField extends FormField
     protected $type = 'Queuekey';
 
     /**
+     * The shape both generators produce: a 32-character md5 digest.
+     *
+     * @since  6.6.0
+     */
+    private const KEY_PATTERN = '/^[a-f0-9]{32}$/';
+
+    /**
      * Method to get the field input markup.
      *
      * @return  string  The field input markup.
@@ -56,21 +65,23 @@ class QueuekeyField extends FormField
             $this->saveQueueKey($queueKey);
         }
 
-        // Build the regenerate URL
+        // The task rotates a stored value, so it is asked for over POST with the token in the body.
         $ajaxUrl = 'index.php?option=com_j2commerce&task=ajax.regenerateQueuekey&format=json';
 
         // Get language strings
         $regenerateText = Text::_('COM_J2COMMERCE_STORE_REGENERATE');
 
+        $queueKeyEsc = htmlspecialchars($queueKey, ENT_QUOTES, 'UTF-8');
+
         // Build the HTML output with vanilla JavaScript
         $html = <<<HTML
 <div class="alert alert-success d-flex align-items-center gap-3 justify-content-between">
-    <strong id="j2commerce_queue_key">{$queueKey}</strong>
+    <strong id="j2commerce_queue_key">{$queueKeyEsc}</strong>
     <button type="button" class="btn btn-success btn-sm" id="j2commerce_regenerate_queuekey">
         {$regenerateText}
     </button>
 </div>
-<input type="hidden" name="{$this->name}" id="{$this->id}" value="{$queueKey}"/>
+<input type="hidden" name="{$this->name}" id="{$this->id}" value="{$queueKeyEsc}"/>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -92,12 +103,15 @@ document.addEventListener('DOMContentLoaded', function() {
         regenerateBtn.classList.add('disabled');
 
         try {
-            const url = '{$ajaxUrl}&' + Joomla.getOptions('csrf.token') + '=1';
-            const response = await fetch(url, {
-                method: 'GET',
+            const body = new FormData();
+            body.append(Joomla.getOptions('csrf.token'), '1');
+
+            const response = await fetch('{$ajaxUrl}', {
+                method: 'POST',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest'
-                }
+                },
+                body: body
             });
 
             if (!response.ok) {
@@ -128,6 +142,32 @@ document.addEventListener('DOMContentLoaded', function() {
 HTML;
 
         return $html;
+    }
+
+    /**
+     * The field renders a hidden input and com_config rebuilds the params blob from what the form
+     * posts, so the form is a write path in its own right. Only the shape the two generators
+     * produce is stored; anything else leaves the current key in place.
+     *
+     * @param   mixed      $value  The submitted value.
+     * @param   string     $group  The optional dot-separated form group path.
+     * @param   ?Registry  $input  The entire data set to filter against.
+     *
+     * @return  string  A 32-character md5 digest.
+     *
+     * @since   6.6.0
+     */
+    public function filter($value, $group = null, ?Registry $input = null)
+    {
+        $value = parent::filter($value, $group, $input);
+
+        if (\is_string($value) && preg_match(self::KEY_PATTERN, $value)) {
+            return $value;
+        }
+
+        $stored = $this->getQueueKey();
+
+        return preg_match(self::KEY_PATTERN, $stored) ? $stored : $this->generateQueueKey();
     }
 
     /**
@@ -176,38 +216,16 @@ HTML;
     private function saveQueueKey(string $queueKey): bool
     {
         try {
-            $db = Factory::getContainer()->get(DatabaseInterface::class);
+            if (ComponentParamsHelper::set('queue_key', $queueKey)) {
+                return true;
+            }
 
-            // Get the current params
-            $params = ComponentHelper::getParams('com_j2commerce');
-
-            // Set the queue_key
-            $params->set('queue_key', $queueKey);
-
-            // Convert to JSON
-            $paramsJson = $params->toString();
-
-            // Update the #__extensions table
-            $query = $db->getQuery(true)
-                ->update($db->quoteName('#__extensions'))
-                ->set($db->quoteName('params') . ' = :params')
-                ->where($db->quoteName('element') . ' = ' . $db->quote('com_j2commerce'))
-                ->where($db->quoteName('type') . ' = ' . $db->quote('component'))
-                ->bind(':params', $paramsJson);
-
-            $db->setQuery($query);
-            $db->execute();
-
-            // Clear the component params cache
-            ComponentHelper::getParams('com_j2commerce', true);
-
-            return true;
+            Factory::getApplication()->enqueueMessage(Text::_('COM_J2COMMERCE_ERROR_SAVING_QUEUE_KEY'), 'error');
         } catch (\Exception $e) {
-            Factory::getApplication()->enqueueMessage(
-                Text::sprintf('COM_J2COMMERCE_ERROR_SAVING_QUEUE_KEY', $e->getMessage()),
-                'error'
-            );
-            return false;
+            Log::add($e->getMessage(), Log::ERROR, 'com_j2commerce');
+            Factory::getApplication()->enqueueMessage(Text::_('COM_J2COMMERCE_ERROR_SAVING_QUEUE_KEY'), 'error');
         }
+
+        return false;
     }
 }

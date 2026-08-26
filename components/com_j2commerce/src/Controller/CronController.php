@@ -14,10 +14,11 @@ namespace J2Commerce\Component\J2commerce\Site\Controller;
 
 \defined('_JEXEC') or die;
 
+use J2Commerce\Component\J2commerce\Administrator\Helper\ComponentParamsHelper;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
 use Joomla\CMS\MVC\Controller\BaseController;
-use Joomla\Database\DatabaseInterface;
+use Joomla\CMS\Uri\Uri;
 use Joomla\Event\Event;
 
 /**
@@ -47,30 +48,28 @@ class CronController extends BaseController
         // Prevent caching (SiteGround SuperCache, etc.)
         $app->setHeader('X-Cache-Control', 'False', true);
         $app->setHeader('Content-Type', 'text/plain; charset=utf-8', true);
+        $app->setHeader('X-Content-Type-Options', 'nosniff', true);
 
         $params   = ComponentHelper::getParams('com_j2commerce');
         $queueKey = $params->get('queue_key', '');
 
         if (empty($queueKey)) {
-            $app->setHeader('status', '503');
-            echo 'ERROR: Queue key not configured';
-            $app->close(503);
+            $this->respond(503, 'ERROR: Queue key not configured');
         }
 
-        $secret = $app->getInput()->get('cron_secret', '', 'raw');
+        // A bracketed parameter makes the filter hand back an array, so the type is checked
+        // before it reaches hash_equals().
+        $secret = $app->getInput()->getString('cron_secret', '');
 
-        if (!hash_equals($queueKey, $secret)) {
-            $app->setHeader('status', '403');
-            echo 'ERROR: Invalid cron secret';
-            $app->close(403);
+        if (!\is_string($secret) || !hash_equals((string) $queueKey, $secret)) {
+            $this->respond(403, 'ERROR: Invalid cron secret');
         }
 
-        $command = trim(strtolower($app->getInput()->get('command', '', 'raw')));
+        $command = $app->getInput()->getString('command', '');
+        $command = \is_string($command) ? trim(strtolower($command)) : '';
 
         if ($command === '') {
-            $app->setHeader('status', '501');
-            echo 'ERROR: No command specified';
-            $app->close(501);
+            $this->respond(501, 'ERROR: No command specified');
         }
 
         // Record last trigger
@@ -79,40 +78,36 @@ class CronController extends BaseController
         $lastTrigger = json_encode([
             'date'    => $nowDate->toSql(),
             'command' => $command,
-            'url'     => $_SERVER['REQUEST_URI'] ?? '',
-            'ip'      => $_SERVER['REMOTE_ADDR'] ?? '',
+            'url'     => Uri::getInstance()->toString(['scheme', 'host', 'port', 'path']),
+            'ip'      => $app->getInput()->server->getString('REMOTE_ADDR', ''),
             'success' => true,
         ]);
 
-        $this->saveConfigValue('cron_last_trigger', $lastTrigger);
+        try {
+            ComponentParamsHelper::set('cron_last_trigger', $lastTrigger);
+        } catch (\Throwable) {
+            // Non-fatal — a missing trigger record must not break the cron run
+        }
 
         // Dispatch the cron event — any plugin can subscribe to onJ2CommerceProcessCron
         $event = new Event('onJ2CommerceProcessCron', ['command' => $command]);
         $app->getDispatcher()->dispatch('onJ2CommerceProcessCron', $event);
 
-        echo "{$command} OK";
-        $app->close();
+        $this->respond(200, htmlspecialchars($command, ENT_QUOTES, 'UTF-8') . ' OK');
     }
 
-    private function saveConfigValue(string $key, string $value): void
+    /**
+     * close() is a bare exit(), so queued headers are only written if sendHeaders() runs first.
+     */
+    private function respond(int $status, string $message): void
     {
-        try {
-            $params = ComponentHelper::getParams('com_j2commerce');
-            $params->set($key, $value);
+        $app = Factory::getApplication();
 
-            $db         = Factory::getContainer()->get(DatabaseInterface::class);
-            $paramsJson = $params->toString();
+        $app->setHeader('status', (string) $status);
+        $app->sendHeaders();
 
-            $query = $db->createQuery()
-                ->update($db->quoteName('#__extensions'))
-                ->set($db->quoteName('params') . ' = :params')
-                ->where($db->quoteName('element') . ' = ' . $db->quote('com_j2commerce'))
-                ->where($db->quoteName('type') . ' = ' . $db->quote('component'))
-                ->bind(':params', $paramsJson);
+        echo $message;
 
-            $db->setQuery($query)->execute();
-        } catch (\Throwable) {
-            // Non-fatal — don't break the cron run
-        }
+        $app->close($status === 200 ? 0 : $status);
     }
 }

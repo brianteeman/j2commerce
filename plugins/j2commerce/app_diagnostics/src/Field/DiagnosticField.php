@@ -38,9 +38,17 @@ class DiagnosticField extends FormField
         $diagnostics = $this->getInfo();
         $cronKey     = J2CommerceHelper::config()->get('queue_key', '');
 
+        // This field reports host and transport detail, and the complete cron URL carries the
+        // queue key configured on the component Options form. The form this field renders on is
+        // reached at a different level, so the whole body is emitted only where the caller also
+        // holds that form's capability - the same one core requires for System Information.
+        $user         = Factory::getApplication()->getIdentity();
+        $maySeeDetail = $user !== null && !$user->guest
+            && ($user->authorise('core.admin') || $user->authorise('core.options', 'com_j2commerce'));
+
         $html = [];
 
-        if ((int) $diagnostics['memory_limit'] < 64) {
+        if ($maySeeDetail && (int) $diagnostics['memory_limit'] < 64) {
             $html[] = '<div class="alert alert-danger">';
             $html[] = Text::_('PLG_J2COMMERCE_APP_DIAGNOSTICS_MINIMUM_MEMORY_LIMIT_WARNING');
             $html[] = '</div>';
@@ -73,11 +81,13 @@ class DiagnosticField extends FormField
             'PLG_J2COMMERCE_APP_DIAGNOSTICS_DB_COLLATION'       => $diagnostics['dbcollation'],
         ];
 
-        foreach ($rows as $label => $value) {
-            $html[] = '<tr>';
-            $html[] = '<th scope="row">' . Text::_($label) . '</th>';
-            $html[] = '<td>' . htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8') . '</td>';
-            $html[] = '</tr>';
+        if ($maySeeDetail) {
+            foreach ($rows as $label => $value) {
+                $html[] = '<tr>';
+                $html[] = '<th scope="row">' . Text::_($label) . '</th>';
+                $html[] = '<td>' . htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8') . '</td>';
+                $html[] = '</tr>';
+            }
         }
 
         // Cron URL row. ComponentDispatcher routes on a dotted task, so cron.execute is the
@@ -90,11 +100,17 @@ class DiagnosticField extends FormField
         $html[] = '<tr>';
         $html[] = '<th scope="row">' . Text::_('PLG_J2COMMERCE_APP_DIAGNOSTICS_CLEAR_CART_CRON') . '</th>';
         $html[] = '<td class="d-flex align-items-center gap-2 flex-wrap">';
-        $html[] = '<code id="j2c-diag-cron-url" data-cron-url="' . $esc($cronBase . $cronKey)
-            . '" data-cron-masked="' . $esc($maskedUrl) . '">' . $esc($maskedUrl) . '</code>';
-        $html[] = '<button type="button" class="btn btn-sm btn-secondary" id="j2c-diag-cron-toggle"'
-            . ' data-label-show="' . $esc(Text::_('JSHOW')) . '"'
-            . ' data-label-hide="' . $esc(Text::_('JHIDE')) . '">' . $esc(Text::_('JSHOW')) . '</button>';
+
+        if ($maySeeDetail) {
+            $html[] = '<code id="j2c-diag-cron-url" data-cron-url="' . $esc($cronBase . $cronKey)
+                . '" data-cron-masked="' . $esc($maskedUrl) . '">' . $esc($maskedUrl) . '</code>';
+            $html[] = '<button type="button" class="btn btn-sm btn-secondary" id="j2c-diag-cron-toggle"'
+                . ' data-label-show="' . $esc(Text::_('JSHOW')) . '"'
+                . ' data-label-hide="' . $esc(Text::_('JHIDE')) . '">' . $esc(Text::_('JSHOW')) . '</button>';
+        } else {
+            $html[] = '<code>' . $esc($maskedUrl) . '</code>';
+        }
+
         $html[] = '</td>';
         $html[] = '</tr>';
 
@@ -102,7 +118,7 @@ class DiagnosticField extends FormField
         $html[] = '</table>';
         $html[] = '</div>';
 
-        $html[] = $this->renderMailSection();
+        $html[] = $maySeeDetail ? $this->renderMailSection() : '';
         $html[] = <<<'HTML'
 <script>
 document.addEventListener('DOMContentLoaded', function () {
