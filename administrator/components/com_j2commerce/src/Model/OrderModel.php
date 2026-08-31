@@ -1050,10 +1050,10 @@ class OrderModel extends AdminModel
     /**
      * Update order status.
      *
-     * @param   int     $orderId        The j2commerce_order_id.
-     * @param   int     $newStatusId    The new order_state_id.
-     * @param   bool    $notify         Whether to notify the customer.
-     * @param   string  $comment        Optional comment for history.
+     * @param   int     $orderId      The j2commerce_order_id.
+     * @param   int     $newStatusId  The new order_state_id.
+     * @param   bool    $notify       Whether to notify the customer.
+     * @param   string  $comment      Optional comment for history.
      *
      * @return  bool  True on success.
      */
@@ -1120,7 +1120,7 @@ class OrderModel extends AdminModel
         $db->setQuery($updateQuery);
 
         if (!$db->execute()) {
-            $this->setError($db->getErrorMsg());
+            $this->setError(Text::_('COM_J2COMMERCE_ORDER_STATUS_UPDATE_FAILED'));
             return false;
         }
 
@@ -1924,6 +1924,10 @@ class OrderModel extends AdminModel
         OrderHelper::normalizeOrderItemRow($row, $baseline);
 
         $db->insertObject('#__j2commerce_orderitems', $row, 'j2commerce_orderitem_id');
+
+        // Fires once the row is persisted and carries its real j2commerce_orderitem_id,
+        // for extensions that need the finished record rather than the pre-insert draft.
+        J2CommerceHelper::plugin()->event('AfterAddOrderItem', [&$row, $variant]);
 
         $this->copyVariantAttributes((int) $row->j2commerce_orderitem_id, (int) $variant->j2commerce_variant_id);
 
