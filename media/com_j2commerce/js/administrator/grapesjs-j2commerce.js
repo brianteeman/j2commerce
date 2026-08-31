@@ -949,18 +949,18 @@ window.postprocessHtmlForExport = function postprocessHtmlForExport(html) {
         return `<img${attrs} src="${shortcode}">`;
     });
 
-    // Convert <tr data-j2c-hook> wrappers back to TinyMCE-safe zero-height rows
-    html = html.replace(/<tr[^>]*data-j2c-hook="([^"]*)"[^>]*>[\s\S]*?<\/tr>/gi,
-        '<tr><td style="padding:0;border:0;font-size:0;line-height:0;height:0;overflow:hidden;">[HOOK:$1]</td></tr>');
-    // Fallback: any remaining div-based hook wrappers (from block manager drag-drop)
-    html = html.replace(/<div[^>]*data-j2c-hook="([^"]*)"[^>]*>[\s\S]*?<\/div>/gi, '[HOOK:$1]');
+    // Convert <tr data-j2c-hook> wrappers back to TinyMCE-safe zero-height rows, and any
+    // div-based ones (from block manager drag-drop) straight back to the bare marker.
+    html = unwrapMarkers(html, 'tr', 'data-j2c-hook', (attrs, pos) =>
+        `<tr><td style="padding:0;border:0;font-size:0;line-height:0;height:0;overflow:hidden;">[HOOK:${pos}]</td></tr>`);
+    html = unwrapMarkers(html, 'div', 'data-j2c-hook', (attrs, pos) => `[HOOK:${pos}]`);
 
     // Convert conditional elements back to [IF:TAG]...[/IF:TAG] or [IFNOT:TAG]...[/IFNOT:TAG]
     html = unwrapConditionals(html);
 
     // Convert loop elements back to [ITEMS_LOOP]...[/ITEMS_LOOP] (tbody from block, div from legacy import)
-    html = html.replace(/<tbody[^>]*data-j2c-loop="ITEMS"[^>]*>([\s\S]*?)<\/tbody>/g, '[ITEMS_LOOP]$1[/ITEMS_LOOP]');
-    html = html.replace(/<div[^>]*data-j2c-loop="ITEMS"[^>]*>([\s\S]*?)<\/div>/g, '[ITEMS_LOOP]$1[/ITEMS_LOOP]');
+    html = unwrapMarkers(html, 'div|tbody', 'data-j2c-loop', (attrs, name, inner) =>
+        `[${name}_LOOP]${inner}[/${name}_LOOP]`);
 
     return html;
 }
