@@ -29,6 +29,7 @@ use J2Commerce\Component\J2commerce\Administrator\Helper\OrderUploadHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\ProductHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\TaxHelper;
 use J2Commerce\Component\J2commerce\Administrator\Helper\UserHelper;
+use J2Commerce\Component\J2commerce\Administrator\Model\Trait\CascadingDeleteTrait;
 use Joomla\CMS\Access\Access;
 use Joomla\CMS\Component\ComponentHelper;
 use Joomla\CMS\Factory;
@@ -45,6 +46,7 @@ use Joomla\CMS\Uri\Uri;
 use Joomla\CMS\User\User;
 use Joomla\CMS\User\UserFactoryInterface;
 use Joomla\CMS\User\UserHelper as JoomlaUserHelper;
+use Joomla\Database\DatabaseInterface;
 use Joomla\Database\ParameterType;
 use Joomla\Registry\Registry;
 
@@ -58,6 +60,8 @@ use Joomla\Registry\Registry;
  */
 class OrderModel extends AdminModel
 {
+    use CascadingDeleteTrait;
+
     public $typeAlias = 'com_j2commerce.order';
 
     protected $text_prefix = 'COM_J2COMMERCE_ORDER';
@@ -75,14 +79,25 @@ class OrderModel extends AdminModel
      */
     protected ?object $orderInfo = null;
 
+    /**
+     * Removing an order removes its transaction records too, but only once the administrator has
+     * been told that is what will happen. The request flag is a confirmation of intent, never a
+     * permission: the count is taken here, and a missing flag refuses the delete outright so a
+     * request that skips the UI gets the safe outcome.
+     */
     public function delete(&$pks): bool
     {
+        // The webservices DELETE route passes a scalar. Without this the loop below iterates zero
+        // times, skipping the whole cascade and the confirmation, while the order row still goes.
+        $pks = (array) $pks;
+
         $db = $this->getDatabase();
 
-        foreach ($pks as $pk) {
-            $pk = (int) $pk;
+        // Narrowed to what the caller may actually delete, so the count the confirmation quotes
+        // matches the orders that would go.
+        $orderIds = [];
 
-            // Get the varchar order_id for this PK
+        foreach ($this->deletableKeys($pks) as $pk) {
             $query = $db->getQuery(true)
                 ->select($db->quoteName('order_id'))
                 ->from($db->quoteName('#__j2commerce_orders'))
@@ -91,10 +106,48 @@ class OrderModel extends AdminModel
             $db->setQuery($query);
             $orderId = $db->loadResult();
 
-            if (!$orderId) {
-                continue;
+            if ($orderId) {
+                $orderIds[$pk] = (string) $orderId;
             }
+        }
 
+        $transactionCount = self::countTransactions($db, array_keys($orderIds));
+
+        if ($transactionCount > 0 && !Factory::getApplication()->getInput()->getBool('confirm_transactions', false)) {
+            $this->setError(Text::sprintf(
+                'COM_J2COMMERCE_ORDER_DELETE_TRANSACTIONS_NOT_CONFIRMED',
+                \count($orderIds),
+                $transactionCount
+            ));
+
+            return false;
+        }
+
+        // The parent row goes first. AdminModel::delete() stops at the first key that fails to
+        // load or canDelete(), and the load-failure branch reports success as it stops, so a stale
+        // key ahead of a live one would otherwise leave a stripped order standing and say it went.
+        // Cascading only what is verifiably gone also means a failure here leaves parentless
+        // children rather than a stripped survivor, which is the recoverable direction: a survivor
+        // has had its upload files unlinked already. Health checks cover the orderitems,
+        // orderhistories, orderitemattributes and uploads residue; the remaining order children
+        // have no check yet.
+        $result = parent::delete($pks);
+
+        if ($orderIds !== []) {
+            $survivors = array_map('intval', (array) $db->setQuery(
+                $db->getQuery(true)
+                    ->select($db->quoteName('j2commerce_order_id'))
+                    ->from($db->quoteName('#__j2commerce_orders'))
+                    ->whereIn($db->quoteName('j2commerce_order_id'), array_keys($orderIds))
+            )->loadColumn());
+
+            $orderIds = array_diff_key($orderIds, array_flip($survivors));
+        }
+
+        // Re-counted against the orders that actually went, so the audit line below is exact.
+        $transactionCount = self::countTransactions($db, array_keys($orderIds));
+
+        foreach ($orderIds as $orderPk => $orderId) {
             // Delete orderitemattributes - get orderitem IDs first to avoid subquery binding issue
             $orderitemIdsQuery = $db->getQuery(true)
                 ->select($db->quoteName('j2commerce_orderitem_id'))
@@ -112,6 +165,11 @@ class OrderModel extends AdminModel
                 );
                 $db->execute();
             }
+
+            // The upload rows carry files on disk, so they go through the helper rather than a
+            // plain DELETE. #__j2commerce_voucheradjustments is deliberately NOT here: it is the
+            // voucher's own balance ledger and belongs to voucher delete.
+            OrderUploadHelper::purgeForOrder($db, $orderId);
 
             // Delete from related tables that use order_id (varchar) FK
             $relatedTables = [
@@ -133,10 +191,55 @@ class OrderModel extends AdminModel
                 $db->setQuery($delQuery);
                 $db->execute();
             }
+
+            // The payment ledger is the one order child keyed by the integer primary key rather
+            // than the varchar order number — the same key OrderTransactionHelper writes it with.
+            $db->setQuery(
+                $db->getQuery(true)
+                    ->delete($db->quoteName('#__j2commerce_ordertransactions'))
+                    ->where($db->quoteName('order_id') . ' = :orderPk')
+                    ->bind(':orderPk', $orderPk, ParameterType::INTEGER)
+            )->execute();
         }
 
-        // Delete the main order rows
-        return parent::delete($pks);
+        if ($transactionCount > 0) {
+            // WARNING rather than INFO: these are financial records and the delete cannot be
+            // undone, so it has to be recorded whether or not debug logging is on.
+            Log::add(
+                \sprintf(
+                    'Deleted %d order(s) [%s] together with %d payment transaction record(s).',
+                    \count($orderIds),
+                    implode(', ', $orderIds),
+                    $transactionCount
+                ),
+                Log::WARNING,
+                'com_j2commerce'
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Payment transaction rows for the given order primary keys. #__j2commerce_ordertransactions
+     * keys on j2commerce_order_id, not on the varchar order number every other order child uses.
+     *
+     * @param  int[]  $orderPks
+     */
+    public static function countTransactions(DatabaseInterface $db, array $orderPks): int
+    {
+        $orderPks = array_values(array_filter(array_map('intval', $orderPks), static fn (int $pk): bool => $pk > 0));
+
+        if ($orderPks === []) {
+            return 0;
+        }
+
+        $query = $db->getQuery(true)
+            ->select('COUNT(*)')
+            ->from($db->quoteName('#__j2commerce_ordertransactions'))
+            ->whereIn($db->quoteName('order_id'), $orderPks);
+
+        return (int) $db->setQuery($query)->loadResult();
     }
 
     protected function populateState(): void
