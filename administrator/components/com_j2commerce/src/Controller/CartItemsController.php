@@ -8,6 +8,8 @@
  * @license     GNU General Public License version 2 or later; see LICENSE.txt
  */
 
+declare(strict_types=1);
+
 namespace J2Commerce\Component\J2commerce\Administrator\Controller;
 
 \defined('_JEXEC') or die;
@@ -15,6 +17,7 @@ namespace J2Commerce\Component\J2commerce\Administrator\Controller;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\MVC\Controller\AdminController;
 use Joomla\CMS\Response\JsonResponse;
+use Joomla\CMS\Router\Route;
 
 /**
  * CartItems Controller (Read-only)
@@ -52,120 +55,149 @@ class CartItemsController extends AdminController
     }
 
     /**
-     * Override add method to prevent adding new cart items from admin
+     * The controller is read-only: every inherited write task is declined here.
      *
-     * @return  void
+     * The redirect goes to the orders view because there is no cartitems view — the
+     * component ships this controller, CartItemsModel, CartitemTable and the filter
+     * form, and nothing else. Orders is where cart items are seen, and is the target
+     * the CartsController twin settled on.
+     *
+     * Overriding the resolved method rather than the task string covers the aliases
+     * AdminController registers: unpublish, archive, trash and report all resolve to
+     * publish(), and orderup and orderdown to reorder().
      *
      * @since  6.0.0
      */
+    private function declineTask(string $key): void
+    {
+        $this->setMessage(Text::_($key), 'error');
+        $this->setRedirect(Route::_('index.php?option=com_j2commerce&view=orders', false));
+    }
+
     public function add()
     {
-        $this->setMessage(Text::_('COM_J2COMMERCE_CARTITEMS_ERROR_ADD_NOT_ALLOWED'), 'error');
-        $this->setRedirect('index.php?option=com_j2commerce&view=cartitems');
+        $this->checkToken();
+
+        $this->declineTask('COM_J2COMMERCE_CARTITEMS_ERROR_ADD_NOT_ALLOWED');
     }
 
-    /**
-     * Override edit method to prevent editing cart items from admin
-     *
-     * @return  void
-     *
-     * @since  6.0.0
-     */
     public function edit()
     {
-        $this->setMessage(Text::_('COM_J2COMMERCE_CARTITEMS_ERROR_EDIT_NOT_ALLOWED'), 'error');
-        $this->setRedirect('index.php?option=com_j2commerce&view=cartitems');
+        $this->checkToken();
+
+        $this->declineTask('COM_J2COMMERCE_CARTITEMS_ERROR_EDIT_NOT_ALLOWED');
     }
 
-    /**
-     * Override publish method to prevent publishing/unpublishing cart items
-     *
-     * @return  void
-     *
-     * @since  6.0.0
-     */
     public function publish()
     {
-        $this->setMessage(Text::_('COM_J2COMMERCE_CARTITEMS_ERROR_PUBLISH_NOT_ALLOWED'), 'error');
-        $this->setRedirect('index.php?option=com_j2commerce&view=cartitems');
+        $this->checkToken();
+
+        $this->declineTask('COM_J2COMMERCE_CARTITEMS_ERROR_PUBLISH_NOT_ALLOWED');
     }
 
-    /**
-     * Override unpublish method to prevent publishing/unpublishing cart items
-     *
-     * @return  void
-     *
-     * @since  6.0.0
-     */
     public function unpublish()
     {
-        $this->setMessage(Text::_('COM_J2COMMERCE_CARTITEMS_ERROR_PUBLISH_NOT_ALLOWED'), 'error');
-        $this->setRedirect('index.php?option=com_j2commerce&view=cartitems');
+        $this->checkToken();
+
+        $this->declineTask('COM_J2COMMERCE_CARTITEMS_ERROR_PUBLISH_NOT_ALLOWED');
     }
 
-    /**
-     * Override delete method to prevent deleting cart items from admin list view
-     *
-     * @return  void
-     *
-     * @since  6.0.0
-     */
     public function delete()
     {
-        $this->setMessage(Text::_('COM_J2COMMERCE_CARTITEMS_ERROR_DELETE_NOT_ALLOWED'), 'error');
-        $this->setRedirect('index.php?option=com_j2commerce&view=cartitems');
+        $this->checkToken();
+
+        $this->declineTask('COM_J2COMMERCE_CARTITEMS_ERROR_DELETE_NOT_ALLOWED');
     }
 
-    /**
-     * Override the save method to prevent saving cart items from admin
-     *
-     * @return  void
-     *
-     * @since  6.0.0
-     */
     public function save()
     {
-        $this->setMessage(Text::_('COM_J2COMMERCE_CARTITEMS_ERROR_SAVE_NOT_ALLOWED'), 'error');
-        $this->setRedirect('index.php?option=com_j2commerce&view=cartitems');
+        $this->checkToken();
+
+        $this->declineTask('COM_J2COMMERCE_CARTITEMS_ERROR_SAVE_NOT_ALLOWED');
     }
 
-    /**
-     * Override the apply method to prevent applying changes to cart items from admin
-     *
-     * @return  void
-     *
-     * @since  6.0.0
-     */
     public function apply()
     {
-        $this->setMessage(Text::_('COM_J2COMMERCE_CARTITEMS_ERROR_SAVE_NOT_ALLOWED'), 'error');
-        $this->setRedirect('index.php?option=com_j2commerce&view=cartitems');
+        $this->checkToken();
+
+        $this->declineTask('COM_J2COMMERCE_CARTITEMS_ERROR_SAVE_NOT_ALLOWED');
     }
 
-    /**
-     * Override trash method to prevent trashing cart items
-     *
-     * @return  void
-     *
-     * @since  6.0.0
-     */
     public function trash()
     {
-        $this->setMessage(Text::_('COM_J2COMMERCE_CARTITEMS_ERROR_DELETE_NOT_ALLOWED'), 'error');
-        $this->setRedirect('index.php?option=com_j2commerce&view=cartitems');
+        $this->checkToken();
+
+        $this->declineTask('COM_J2COMMERCE_CARTITEMS_ERROR_DELETE_NOT_ALLOWED');
+    }
+
+    public function checkin()
+    {
+        $this->checkToken();
+
+        $this->declineTask('COM_J2COMMERCE_CARTITEMS_ERROR_CHECKIN_NOT_ALLOWED');
+
+        return false;
     }
 
     /**
-     * Override checkin method to prevent checking in cart items
-     *
-     * @return  void
+     * Inherited from AdminController and never served: getModel() resolves CartItem,
+     * for which there is no model class, so the inherited body calls reorder() on null.
      *
      * @since  6.0.0
      */
-    public function checkin()
+    public function reorder()
     {
-        $this->setMessage(Text::_('COM_J2COMMERCE_CARTITEMS_ERROR_CHECKIN_NOT_ALLOWED'), 'error');
-        $this->setRedirect('index.php?option=com_j2commerce&view=cartitems');
+        $this->checkToken();
+
+        $this->declineTask('COM_J2COMMERCE_ERROR_TASK_NOT_SUPPORTED');
+
+        return false;
+    }
+
+    /** Same as reorder(): the inherited body calls saveorder() on a model that cannot be built. */
+    public function saveorder()
+    {
+        $this->checkToken();
+
+        $this->declineTask('COM_J2COMMERCE_ERROR_TASK_NOT_SUPPORTED');
+
+        return false;
+    }
+
+    /** An AJAX task: answer the caller rather than setting a redirect nothing follows. */
+    public function saveOrderAjax()
+    {
+        $this->checkToken();
+
+        $this->sendJson(['error' => Text::_('COM_J2COMMERCE_ERROR_TASK_NOT_SUPPORTED')]);
+    }
+
+    /**
+     * Already survives the missing model — AdminController::runTransition() returns early
+     * unless the model is a WorkflowModelInterface — but it returns with no message and no
+     * redirect. Decline it here so the outcome is stated.
+     *
+     * @since  6.0.0
+     */
+    public function runTransition()
+    {
+        $this->checkToken();
+
+        $this->declineTask('COM_J2COMMERCE_ERROR_TASK_NOT_SUPPORTED');
+
+        return false;
+    }
+
+    /** JSON exit for the AJAX tasks. close() is exit(), so the headers flush first. */
+    private function sendJson(mixed $data): void
+    {
+        $this->app->setHeader('Content-Type', 'application/json; charset=utf-8');
+        $this->app->setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+        $this->app->setHeader('X-Content-Type-Options', 'nosniff', true);
+        $this->app->sendHeaders();
+
+        echo json_encode($data);
+        $this->app->close();
     }
 
     /**
@@ -180,10 +212,6 @@ class CartItemsController extends AdminController
         $model   = $this->getModel('CartItems');
         $options = $model->getProductTypeOptions();
 
-        echo new JsonResponse($options);
-
-        $this->app->close();
+        $this->sendJson(new JsonResponse($options));
     }
-
-
 }
