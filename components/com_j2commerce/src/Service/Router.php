@@ -14,6 +14,7 @@ namespace J2Commerce\Component\J2commerce\Site\Service;
 
 \defined('_JEXEC') or die;
 
+use J2Commerce\Component\J2commerce\Site\Helper\TagTreeHelper;
 use Joomla\CMS\Application\SiteApplication;
 use Joomla\CMS\Categories\CategoryFactoryInterface;
 use Joomla\CMS\Categories\CategoryInterface;
@@ -125,6 +126,8 @@ class Router extends RouterView
         $this->registerView(new RouterViewConfiguration('confirmation'));
         $this->registerView(new RouterViewConfiguration('paymentupdate'));
         $this->registerView(new RouterViewConfiguration('categoryalias'));
+        $this->registerView(new RouterViewConfiguration('tags'));
+        $this->registerView(new RouterViewConfiguration('tagalias'));
 
         // Allow J2Commerce plugins to register additional frontend views
         // so app plugins can add SEF routes without modifying this core file.
@@ -225,13 +228,14 @@ class Router extends RouterView
             }
         }
 
-        // Menu links arrive as index.php?Itemid=N with no view, so the categoryalias rewrite
+        // Menu links arrive as index.php?Itemid=N with no view, so the alias rewrites
         // below never saw them and emitted the alias URL, costing every visitor a 301.
         if (empty($query['view']) && !empty($query['Itemid'])) {
             $aliasItem = $this->menu->getItem((int) $query['Itemid']);
+            $aliasView = $aliasItem->query['view'] ?? '';
 
-            if ($aliasItem && ($aliasItem->query['view'] ?? '') === 'categoryalias' && !empty($aliasItem->query['id'])) {
-                $query['view'] = 'categoryalias';
+            if (\in_array($aliasView, ['categoryalias', 'tagalias'], true) && !empty($aliasItem->query['id'])) {
+                $query['view'] = $aliasView;
                 $query['id']   = (int) $aliasItem->query['id'];
             }
         }
@@ -245,6 +249,35 @@ class Router extends RouterView
             $query['view']  = 'products';
             $query['catid'] = $catid;
             unset($query['id']);
+
+            if ($menuItem) {
+                $query['Itemid'] = $menuItem->id;
+            }
+        }
+
+        // A tag alias is that tag's own listing, so it resolves exactly as the listing does.
+        if (($query['view'] ?? '') === 'tagalias' && !empty($query['id'])) {
+            $query['view'] = 'producttags';
+            unset($query['Itemid']);
+        }
+
+        // One tag's listing belongs to the Product Tags View that roots it, else to a Product
+        // Tag List View for that single tag.
+        if (($query['view'] ?? '') === 'producttags' && !empty($query['id']) && !isset($query['tag_ids'])) {
+            $tagId    = (int) $query['id'];
+            $menuItem = $this->findTagsMenuForTag($tagId, (int) ($query['Itemid'] ?? 0));
+
+            if ($menuItem) {
+                $query['Itemid'] = $menuItem->id;
+            } elseif ($menuItem = $this->findProductTagsMenu([$tagId], 'any')) {
+                $query['Itemid']  = $menuItem->id;
+                $query['tag_ids'] = [$tagId];
+                unset($query['id']);
+            }
+        }
+
+        if (($query['view'] ?? '') === 'tags') {
+            $menuItem = $this->findTagsMenu((int) ($query['id'] ?? 0));
 
             if ($menuItem) {
                 $query['Itemid'] = $menuItem->id;
@@ -313,6 +346,27 @@ class Router extends RouterView
                 unset($query['view'], $query['tag_ids'], $query['tag_match']);
                 return [];
             }
+        }
+
+        $tagsMenu = !empty($query['Itemid']) ? $this->menu->getItem((int) $query['Itemid']) : null;
+        $tagsMenu = ($tagsMenu->query['view'] ?? '') === 'tags' ? $tagsMenu : null;
+
+        // CASE 0b: a tag listing inside a Product Tags View - the tag path below the menu's root tag
+        if ($tagsMenu && ($query['view'] ?? '') === 'producttags' && !empty($query['id']) && !isset($query['tag_ids'])) {
+            $path = TagTreeHelper::pathBelow($this->tagsMenuRootId($tagsMenu), (int) $query['id']);
+
+            if ($path !== null) {
+                unset($query['view'], $query['id']);
+
+                return array_column($path, 'alias');
+            }
+        }
+
+        // CASE 0c: the Product Tags View landing itself
+        if ($tagsMenu && ($query['view'] ?? '') === 'tags' && $this->tagsMenuRootId($tagsMenu) === max((int) ($query['id'] ?? 0), TagTreeHelper::ROOT_ID)) {
+            unset($query['view'], $query['id']);
+
+            return [];
         }
 
         // CASE 1: Products view with catid
@@ -620,6 +674,57 @@ class Router extends RouterView
 
             return $sortedQuery === $sortedMenu && $tagMatch === $menuTagMatch;
         });
+    }
+
+    /** The Product Tags View menu item for exactly this parent tag. */
+    private function findTagsMenu(int $parentId): ?object
+    {
+        $parentId = max($parentId, TagTreeHelper::ROOT_ID);
+
+        return $this->pickMenuByLanguage(
+            fn (object $menu): bool => ($menu->query['view'] ?? '') === 'tags' && $this->tagsMenuRootId($menu) === $parentId
+        );
+    }
+
+    /**
+     * The Product Tags View menu item whose root tag is the tag or one of its ancestors. The
+     * preferred Itemid wins when it qualifies; otherwise the request language ranks first and
+     * the deepest root second, which gives the shortest URL.
+     */
+    private function findTagsMenuForTag(int $tagId, int $preferredItemid = 0): ?object
+    {
+        $best    = null;
+        $bestKey = null;
+
+        foreach ($this->menu->getItems('component', 'com_j2commerce') as $menu) {
+            if (($menu->query['view'] ?? '') !== 'tags') {
+                continue;
+            }
+
+            $rootId = $this->tagsMenuRootId($menu);
+
+            if (!TagTreeHelper::isWithin($tagId, $rootId)) {
+                continue;
+            }
+
+            if ((int) $menu->id === $preferredItemid) {
+                return $menu;
+            }
+
+            $key = [$this->menuLanguageRank($menu), -TagTreeHelper::get($rootId)->level];
+
+            if ($bestKey === null || $key < $bestKey) {
+                $best    = $menu;
+                $bestKey = $key;
+            }
+        }
+
+        return $best;
+    }
+
+    private function tagsMenuRootId(object $menu): int
+    {
+        return max((int) ($menu->query['id'] ?? 0), TagTreeHelper::ROOT_ID);
     }
 
     /**
@@ -1364,6 +1469,24 @@ class Router extends RouterView
                     $segments     = [];
                     return $vars;
                 }
+            }
+        }
+
+        // CASE 1b: Tags menu - segments are tag aliases below the menu's root tag. A product keeps
+        // its one canonical URL, so a product segment is never resolved here.
+        if ($menuView === 'tags') {
+            $tagId     = ($menuId && $menuId > 1) ? $menuId : TagTreeHelper::ROOT_ID;
+            $remaining = $segments;
+
+            while ($remaining && ($child = TagTreeHelper::childByAlias($tagId, $remaining[0]))) {
+                $tagId = $child->id;
+                array_shift($remaining);
+            }
+
+            if ($remaining === []) {
+                $segments = [];
+
+                return ['view' => 'producttags', 'id' => $tagId];
             }
         }
 
