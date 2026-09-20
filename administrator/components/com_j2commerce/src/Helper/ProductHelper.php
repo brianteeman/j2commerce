@@ -928,22 +928,12 @@ class ProductHelper
                 $behavior->onAfterGetProduct($event);
             }
         } catch (\Exception $e) {
-            // Log error but don't fail - base product data is still valid.
-            // The detail goes to the log only: an exception reaching here is
-            // typically from the database layer, and its message carries the
-            // failing statement and the driver's error text. This hydration
-            // path is shared by the site product page and the admin edit and
-            // AJAX flows, so nothing here may assume an admin-only audience.
-            Log::add(
-                'Behavior enhancement failed for product type "' . $productType . '": ' . $e->getMessage(),
-                Log::ERROR,
-                'com_j2commerce'
-            );
-
-            Factory::getApplication()->enqueueMessage(
-                Text::_('COM_J2COMMERCE_PRODUCT_BEHAVIOR_ENHANCEMENT_FAILED'),
-                'warning'
-            );
+            // Base product data is still valid, so this is not fatal to the caller --
+            // an unwritable log file must not take the render down with it.
+            try {
+                Log::add('Behavior enhancement failed: ' . $e->getMessage(), Log::ERROR, 'com_j2commerce');
+            } catch (\Throwable $logFailure) {
+            }
         }
     }
 
