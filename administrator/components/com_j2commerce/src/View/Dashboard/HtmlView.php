@@ -241,6 +241,27 @@ class HtmlView extends BaseHtmlView
                 $msg['type'] = 'danger';
             }
 
+            // The layout renders `text` and `link` unescaped so core strings can carry markup.
+            // A plugin's values are not core strings, so they are escaped at this boundary
+            // instead — escaping in the layout would strip the markup core relies on.
+            // Never double-encode: Route::_() already returns `&` as `&amp;`, and re-encoding
+            // it to `&amp;amp;` renames every parameter after the first to `amp;<name>`.
+            $msg['text'] = htmlspecialchars((string) $msg['text'], ENT_QUOTES, 'UTF-8', false);
+
+            if (isset($msg['link'])) {
+                $link = (string) $msg['link'];
+
+                // Encoding is not scheme validation, and this is the boundary a plugin's values
+                // are declared safe at — a half-boundary is the kind that gets relied on.
+                $allowed = str_starts_with($link, 'index.php')
+                    || str_starts_with($link, '/')
+                    || str_starts_with($link, '#')
+                    || str_starts_with($link, 'http://')
+                    || str_starts_with($link, 'https://');
+
+                $msg['link'] = $allowed ? htmlspecialchars($link, ENT_QUOTES, 'UTF-8', false) : '';
+            }
+
             $this->dashboardMessages[] = $msg;
         }
 
@@ -272,19 +293,15 @@ class HtmlView extends BaseHtmlView
         // A DB-stored template body is never rewritten by an update, so the shipped email and
         // print presets can move ahead of what a store actually sends. Sync Core Templates is
         // the action that closes that gap, and nothing else tells the merchant to run it.
+        // Each half has its own Sync button on its own screen, so each gets its own message:
+        // one notice covering both counts outlives the sync the merchant just ran.
         if ($this->getCurrentUser()->authorise('core.edit', 'com_j2commerce')) {
             $outdatedTemplates = (new CoreTemplateSyncHelper())->countTemplatesWithOutdatedLogo();
 
-            if (array_sum($outdatedTemplates) > 0) {
-                $text = Text::_('COM_J2COMMERCE_DASHBOARD_EMAIL_TEMPLATES_OUTDATED');
-
-                if ($outdatedTemplates['invoice'] > 0) {
-                    $text .= ' ' . Text::_('COM_J2COMMERCE_DASHBOARD_PRINT_TEMPLATES_OUTDATED');
-                }
-
+            if ($outdatedTemplates['email'] > 0) {
                 $this->dashboardMessages[] = [
-                    'id'          => 'com_j2commerce_core_templates_logo',
-                    'text'        => $text,
+                    'id'          => 'com_j2commerce_core_email_templates_logo',
+                    'text'        => Text::_('COM_J2COMMERCE_DASHBOARD_EMAIL_TEMPLATES_OUTDATED'),
                     'type'        => 'warning',
                     'icon'        => 'fa-solid fa-envelope-open-text',
                     'dismissible' => 'session',
@@ -293,16 +310,30 @@ class HtmlView extends BaseHtmlView
                     'priority'    => 40,
                 ];
             }
+
+            if ($outdatedTemplates['invoice'] > 0) {
+                $this->dashboardMessages[] = [
+                    'id'          => 'com_j2commerce_core_print_templates_logo',
+                    'text'        => Text::_('COM_J2COMMERCE_DASHBOARD_PRINT_TEMPLATES_OUTDATED'),
+                    'type'        => 'warning',
+                    'icon'        => 'fa-solid fa-file-invoice',
+                    'dismissible' => 'session',
+                    'link'        => Route::_('index.php?option=com_j2commerce&view=invoicetemplates'),
+                    'linkText'    => Text::_('COM_J2COMMERCE_INVOICETEMPLATES'),
+                    'priority'    => 41,
+                ];
+            }
         }
 
         usort($this->dashboardMessages, fn ($a, $b) => ($a['priority'] ?? 500) <=> ($b['priority'] ?? 500));
 
+        // Registered here rather than beside the charts: the notices carry their own gates,
+        // none of which is j2commerce.viewreports, so an admin without that permission was
+        // served the markup with no script behind it.
         if (!empty($this->dashboardMessages)) {
             $wa->registerAndUseScript('com_j2commerce.vendor.swiper', 'media/com_j2commerce/vendor/swiper/js/swiper-bundle.min.js', [], ['defer' => true]);
             $wa->registerAndUseStyle('com_j2commerce.vendor.swiper.css', 'media/com_j2commerce/vendor/swiper/css/swiper-bundle.min.css');
-            $this->getDocument()->addScriptOptions('com_j2commerce.dashboardMessages', [
-                'messageIds' => array_column($this->dashboardMessages, 'id'),
-            ]);
+            $wa->registerAndUseScript('com_j2commerce.dashboard.messages', 'media/com_j2commerce/js/administrator/dashboard-messages.js', [], ['defer' => true], ['com_j2commerce.vendor.swiper']);
         }
 
         Text::script('COM_J2COMMERCE_DASHBOARD_SAMPLEDATA_LOADED');
